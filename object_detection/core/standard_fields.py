@@ -71,6 +71,7 @@ class InputDataFields(object):
   groundtruth_keypoints = 'groundtruth_keypoints'
   groundtruth_keypoint_visibilities = 'groundtruth_keypoint_visibilities'
   groundtruth_label_scores = 'groundtruth_label_scores'
+  groundtruth_rotations = 'groundtruth_rotations'
 
 
 class BoxListFields(object):
@@ -92,6 +93,7 @@ class BoxListFields(object):
   weights = 'weights'
   objectness = 'objectness'
   masks = 'masks'
+  rotations = 'rotations'
   keypoints = 'keypoints'
   keypoint_heatmaps = 'keypoint_heatmaps'
 
@@ -140,6 +142,7 @@ class TfExampleFields(object):
   object_bbox_xmin = 'image/object/bbox/xmin'
   object_bbox_ymax = 'image/object/bbox/ymax'
   object_bbox_xmax = 'image/object/bbox/xmax'
+  object_rotation = 'image/object/rotation'
   object_view = 'image/object/view'
   object_truncated = 'image/object/truncated'
   object_occluded = 'image/object/occluded'

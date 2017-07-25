@@ -1,0 +1,57 @@
+syntax = "proto2";
+package object_detection.protos;
+
+import "object_detection/protos/anchor_generator.proto";
+import "object_detection/protos/box_coder.proto";
+import "object_detection/protos/box_predictor.proto";
+import "object_detection/protos/hyperparams.proto";
+import "object_detection/protos/image_resizer.proto";
+import "object_detection/protos/losses.proto";
+import "object_detection/protos/post_processing.proto";
+
+// Configuration for EAST models.
+message East {
+
+  // Number of classes to predict.
+  optional int32 num_classes = 1;
+
+  // Image resizer for preprocessing the input image.
+  optional ImageResizer image_resizer = 2;
+
+  // Feature extractor config.
+  optional EastFeatureExtractor feature_extractor = 3;
+
+  // Box coder to encode the boxes.
+  optional BoxCoder box_coder = 4;
+
+  // Box predictor to attach to the features.
+  optional BoxPredictor box_predictor = 5;
+
+  // Anchor generator to compute anchors.
+  optional AnchorGenerator anchor_generator = 6;
+
+  // Post processing to apply on the predictions.
+  optional PostProcessing post_processing = 7;
+
+  // Whether to normalize the loss by number of groundtruth boxes that match to
+  // the anchors.
+  optional bool normalize_loss_by_num_matches = 8 [default=true];
+
+  // Loss configuration for training.
+  optional Loss loss = 9;
+}
+
+
+message EastFeatureExtractor {
+  // Type of east feature extractor.
+  optional string type = 1;
+
+  // The factor to alter the depth of the channels in the feature extractor.
+  optional float depth_multiplier = 2 [default=1.0];
+
+  // Minimum number of the channels in the feature extractor.
+  optional int32 min_depth = 3 [default=16];
+
+  // Hyperparameters for the feature extractor.
+  optional Hyperparams conv_hyperparams = 4;
+}

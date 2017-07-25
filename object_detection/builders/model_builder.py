@@ -76,7 +76,7 @@ def build(model_config, is_training):
   raise ValueError('Unknown meta architecture: {}'.format(meta_architecture))
 
 
-def _build_ssd_feature_extractor(feature_extractor_config, is_training,
+def _build_east_feature_extractor(feature_extractor_config, is_training,
                                  reuse_weights=None):
   """Builds a ssd_meta_arch.SSDFeatureExtractor based on config.
 
@@ -301,3 +301,89 @@ def _build_faster_rcnn_model(frcnn_config, is_training):
         maxpool_stride=maxpool_stride,
         second_stage_mask_rcnn_box_predictor=second_stage_box_predictor,
         **common_kwargs)
+
+
+#----------------------------- east --------------------------#
+# A map of names to SSD feature extractors.
+EAST_FEATURE_EXTRACTOR_CLASS_MAP = {
+    'ssd_mobilenet_v1': EASTMobileNetV1FeatureExtractor,
+}
+
+def _build_east_feature_extractor(feature_extractor_config, is_training,
+                                 reuse_weights=None):
+  """Builds a east_meta_arch.EASTFeatureExtractor based on config.
+
+  Args:
+    feature_extractor_config: A EASTFeatureExtractor proto config from east.proto.
+    is_training: True if this feature extractor is being built for training.
+    reuse_weights: if the feature extractor should reuse weights.
+
+  Returns:
+    east_meta_arch.EASTFeatureExtractor based on config.
+
+  Raises:
+    ValueError: On invalid feature extractor type.
+  """
+  feature_type = feature_extractor_config.type
+  depth_multiplier = feature_extractor_config.depth_multiplier
+  min_depth = feature_extractor_config.min_depth
+  conv_hyperparams = hyperparams_builder.build(
+      feature_extractor_config.conv_hyperparams, is_training)
+
+  if feature_type not in EAST_FEATURE_EXTRACTOR_CLASS_MAP:
+    raise ValueError('Unknown east feature_extractor: {}'.format(feature_type))
+
+  feature_extractor_class = EAST_FEATURE_EXTRACTOR_CLASS_MAP[feature_type]
+  return feature_extractor_class(depth_multiplier, min_depth, conv_hyperparams,
+                                 reuse_weights)
+
+
+def _build_east_model(east_config, is_training):
+  """Builds an EAST detection model based on the model config.
+
+  Args:
+    east_config: A ssd.proto object containing the config for the desired
+      SSDMetaArch.
+    is_training: True if this model is being built for training purposes.
+
+  Returns:
+    EASTMetaArch based on the config.
+  Raises:
+    ValueError: If east_config.type is not recognized (i.e. not registered in
+      model_class_map).
+  """
+  num_classes = east_config.num_classes
+
+  # Feature extractor
+  feature_extractor = _build_east_feature_extractor(east_config.feature_extractor,
+                                                   is_training)
+
+  box_coder = box_coder_builder.build(east_config.box_coder)
+  box_predictor = box_predictor_builder.build(hyperparams_builder.build,
+                                              east_config.box_predictor,
+                                              is_training, num_classes)
+  anchor_generator = anchor_generator_builder.build(
+      east_config.anchor_generator)
+  image_resizer_fn = image_resizer_builder.build(east_config.image_resizer)
+  non_max_suppression_fn, score_conversion_fn = post_processing_builder.build(
+      east_config.post_processing)
+  (classification_loss, localization_loss, classification_weight,
+   localization_weight,
+   hard_example_miner) = losses_builder.build(east_config.loss)
+  normalize_loss_by_num_matches = east_config.normalize_loss_by_num_matches
+
+  return east_meta_arch.EASTMetaArch(
+      is_training,
+      anchor_generator,
+      box_predictor,
+      box_coder,
+      feature_extractor,
+      image_resizer_fn,
+      non_max_suppression_fn,
+      score_conversion_fn,
+      classification_loss,
+      localization_loss,
+      classification_weight,
+      localization_weight,
+      normalize_loss_by_num_matches)
+

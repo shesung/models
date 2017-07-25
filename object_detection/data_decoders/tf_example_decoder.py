@@ -44,6 +44,7 @@ class TfExampleDecoder(data_decoder.DataDecoder):
         'image/object/bbox/xmax': tf.VarLenFeature(tf.float32),
         'image/object/bbox/ymin': tf.VarLenFeature(tf.float32),
         'image/object/bbox/ymax': tf.VarLenFeature(tf.float32),
+        'image/object/rotation': tf.VarLenFeature(tf.float32),
         'image/object/class/label': tf.VarLenFeature(tf.int64),
         'image/object/area': tf.VarLenFeature(tf.float32),
         'image/object/is_crowd': tf.VarLenFeature(tf.int64),
@@ -67,6 +68,8 @@ class TfExampleDecoder(data_decoder.DataDecoder):
                 ['ymin', 'xmin', 'ymax', 'xmax'], 'image/object/bbox/')),
         fields.InputDataFields.groundtruth_classes: (
             slim_example_decoder.Tensor('image/object/class/label')),
+        fields.InputDataFields.groundtruth_rotations: (
+            slim_example_decoder.Tensor('image/object/rotation')),
         fields.InputDataFields.groundtruth_area: slim_example_decoder.Tensor(
             'image/object/area'),
         fields.InputDataFields.groundtruth_is_crowd: (
@@ -119,6 +122,10 @@ class TfExampleDecoder(data_decoder.DataDecoder):
                                                     self.items_to_handlers)
     keys = decoder.list_items()
     tensors = decoder.decode(serialized_example, items=keys)
+    print keys ###
+    for i in range(len(tensors)):
+      if keys[i] in ['filename']:
+        tensors[i] = tf.Print(tensors[i], [tf.shape(tensors[i]),tensors[i]], message='%s='%keys[i]) ###
     tensor_dict = dict(zip(keys, tensors))
     is_crowd = fields.InputDataFields.groundtruth_is_crowd
     tensor_dict[is_crowd] = tf.cast(tensor_dict[is_crowd], dtype=tf.bool)
