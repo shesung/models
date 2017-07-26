@@ -14,6 +14,6 @@ message BoxCoder {
     FasterRcnnBoxCoder faster_rcnn_box_coder = 1;
     MeanStddevBoxCoder mean_stddev_box_coder = 2;
     SquareBoxCoder square_box_coder = 3;
-    RotatedBoxCoder east_box_coder = 4;
+    RotatedBoxCoder rotated_box_coder = 4;
   }
 }

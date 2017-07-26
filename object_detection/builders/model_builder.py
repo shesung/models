@@ -73,6 +73,8 @@ def build(model_config, is_training):
     return _build_ssd_model(model_config.ssd, is_training)
   if meta_architecture == 'faster_rcnn':
     return _build_faster_rcnn_model(model_config.faster_rcnn, is_training)
+  if meta_architecture == 'east':
+    return _build_east_model(model_config.east, is_training)
   raise ValueError('Unknown meta architecture: {}'.format(meta_architecture))
 
 
@@ -388,4 +390,3 @@ def _build_east_model(east_config, is_training):
       classification_weight,
       localization_weight,
       normalize_loss_by_num_matches)
-

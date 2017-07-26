@@ -91,10 +91,8 @@ class EASTMetaArch(model.DetectionModel):
                score_conversion_fn,
                classification_loss,
                localization_loss,
-               rotations_loss,
                classification_loss_weight,
                localization_loss_weight,
-               rotations_weight,
                normalize_loss_by_num_matches,
                add_summaries=True):
     """SSDMetaArch Constructor.
@@ -149,10 +147,8 @@ class EASTMetaArch(model.DetectionModel):
     self._feature_extractor = feature_extractor
     self._classification_loss = classification_loss
     self._localization_loss = localization_loss
-    self._rotation_loss = rotation_loss
     self._classification_loss_weight = classification_loss_weight
     self._localization_loss_weight = localization_loss_weight
-    self._rotation_loss_weight = rotation_loss_weight
     self._normalize_loss_by_num_matches = normalize_loss_by_num_matches
 
     self._image_resizer_fn = image_resizer_fn
@@ -352,7 +348,7 @@ class EASTMetaArch(model.DetectionModel):
       box_encodings = prediction_dict['box_encodings']
       score_predictions = prediction_dict['scores']
       batched_rotations = prediction_dict['rotations']
-      detection_boxes = = tf.stack([
+      detection_boxes = tf.stack([
           self._box_coder.decode(boxes, rotations, self.anchors).get()
           for boxes,rotations in zip(tf.unstack(box_encodings),
                                      tf.unstack(batched_rotations))
@@ -468,7 +464,7 @@ class EASTMetaArch(model.DetectionModel):
     for anchors, gt_boxes, gt_rotations, gt_masks in zip(anchors_batch,
         groundtruth_boxlists, groundtruth_rotations_list, groundtruth_masks_list):
 
-      match = self._match(
+      match = self._match()
       (score_targets, score_weights) = self._assign_score_target(match)
       (rbox_targets, rbox_weights) = self._assign_rbox_target(anchors, gt_boxes,
                                                               gt_rotations, match)

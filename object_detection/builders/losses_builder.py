@@ -122,9 +122,10 @@ def _build_localization_loss(loss_config):
     return losses.WeightedIOULocalizationLoss()
 
   if loss_type == 'rbox':
-    return losses.RBoxLocalizationLoss()
+    config = loss_config.rbox
+    return losses.RBoxLocalizationLoss(alpha=config.alpha)
 
-raise ValueError('Empty loss config.')
+  raise ValueError('Empty loss config.')
 
 
 def _build_classification_loss(loss_config):

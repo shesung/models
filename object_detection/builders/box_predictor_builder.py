@@ -104,7 +104,7 @@ def build(argscope_fn, box_predictor_config, is_training, num_classes):
         box_code_size=rfcn_box_predictor.box_code_size)
     return box_predictor_object
 
-if  box_predictor_oneof == 'score_rot_box_predictor':
+  if box_predictor_oneof == 'score_rot_box_predictor':
     conv_box_predictor = box_predictor_config.score_rot_box_predictor
     conv_hyperparams = argscope_fn(conv_box_predictor.conv_hyperparams,
                                    is_training)

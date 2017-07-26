@@ -49,6 +49,7 @@ message WeightedIOULocalizationLoss {
 }
 
 message RBoxLocalizationLoss {
+  optional float alpha = 1 [default=1.0];
 }
 
 // Configuration for class prediction loss function.
