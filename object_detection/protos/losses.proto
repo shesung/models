@@ -28,6 +28,7 @@ message LocalizationLoss {
     WeightedL2LocalizationLoss weighted_l2 = 1;
     WeightedSmoothL1LocalizationLoss weighted_smooth_l1 = 2;
     WeightedIOULocalizationLoss weighted_iou = 3;
+    RBoxLocalizationLoss rbox = 4;
   }
 }
 
@@ -47,12 +48,16 @@ message WeightedSmoothL1LocalizationLoss {
 message WeightedIOULocalizationLoss {
 }
 
+message RBoxLocalizationLoss {
+}
+
 // Configuration for class prediction loss function.
 message ClassificationLoss {
   oneof classification_loss {
     WeightedSigmoidClassificationLoss weighted_sigmoid = 1;
     WeightedSoftmaxClassificationLoss weighted_softmax = 2;
     BootstrappedSigmoidClassificationLoss bootstrapped_sigmoid = 3;
+    ScoreLoss score = 4;
   }
 }
 
@@ -81,6 +86,9 @@ message BootstrappedSigmoidClassificationLoss {
 
   // Output loss per anchor.
   optional bool anchorwise_output = 3 [default=false];
+}
+
+message ScoreLoss {
 }
 
 // Configuation for hard example miner.

@@ -121,7 +121,10 @@ def _build_localization_loss(loss_config):
   if loss_type == 'weighted_iou':
     return losses.WeightedIOULocalizationLoss()
 
-  raise ValueError('Empty loss config.')
+  if loss_type == 'rbox':
+    return losses.RBoxLocalizationLoss()
+
+raise ValueError('Empty loss config.')
 
 
 def _build_classification_loss(loss_config):
@@ -157,5 +160,8 @@ def _build_classification_loss(loss_config):
         alpha=config.alpha,
         bootstrap_type=('hard' if config.hard_bootstrap else 'soft'),
         anchorwise_output=config.anchorwise_output)
+
+  if loss_type == 'score':
+    return losses.ScoreLoss()
 
   raise ValueError('Empty loss config.')

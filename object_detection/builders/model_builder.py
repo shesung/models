@@ -304,9 +304,11 @@ def _build_faster_rcnn_model(frcnn_config, is_training):
 
 
 #----------------------------- east --------------------------#
-# A map of names to SSD feature extractors.
+from object_detection.meta_architectures import east_meta_arch
+from object_detection.models.east_mobilenet_v1_feature_extractor import EASTMobileNetV1FeatureExtractor
+
 EAST_FEATURE_EXTRACTOR_CLASS_MAP = {
-    'ssd_mobilenet_v1': EASTMobileNetV1FeatureExtractor,
+    'east_mobilenet_v1': EASTMobileNetV1FeatureExtractor,
 }
 
 def _build_east_feature_extractor(feature_extractor_config, is_training,
@@ -342,7 +344,7 @@ def _build_east_model(east_config, is_training):
   """Builds an EAST detection model based on the model config.
 
   Args:
-    east_config: A ssd.proto object containing the config for the desired
+    east_config: A east.proto object containing the config for the desired
       SSDMetaArch.
     is_training: True if this model is being built for training purposes.
 

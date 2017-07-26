@@ -103,4 +103,24 @@ def build(argscope_fn, box_predictor_config, is_training, num_classes):
         depth=rfcn_box_predictor.depth,
         box_code_size=rfcn_box_predictor.box_code_size)
     return box_predictor_object
+
+if  box_predictor_oneof == 'score_rot_box_predictor':
+    conv_box_predictor = box_predictor_config.score_rot_box_predictor
+    conv_hyperparams = argscope_fn(conv_box_predictor.conv_hyperparams,
+                                   is_training)
+    box_predictor_object = box_predictor.ScoreRotBoxPredictor(
+        is_training=is_training,
+        num_classes=num_classes,
+        conv_hyperparams=conv_hyperparams,
+        min_depth=conv_box_predictor.min_depth,
+        max_depth=conv_box_predictor.max_depth,
+        num_layers_before_predictor=(conv_box_predictor.
+                                     num_layers_before_predictor),
+        use_dropout=conv_box_predictor.use_dropout,
+        dropout_keep_prob=conv_box_predictor.dropout_keep_probability,
+        kernel_size=conv_box_predictor.kernel_size,
+        box_code_size=conv_box_predictor.box_code_size,
+        apply_sigmoid_to_scores=conv_box_predictor.apply_sigmoid_to_scores)
+    return box_predictor_object
+
   raise ValueError('Unknown box predictor: {}'.format(box_predictor_oneof))

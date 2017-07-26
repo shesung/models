@@ -13,26 +13,26 @@
 # limitations under the License.
 # ==============================================================================
 
-"""SSDFeatureExtractor for MobilenetV1 features."""
+"""EASTFeatureExtractor for MobilenetV1 features."""
 
 import tensorflow as tf
 
-from object_detection.meta_architectures import ssd_meta_arch
+from object_detection.meta_architectures import east_meta_arch
 from object_detection.models import feature_map_generators
 from nets import mobilenet_v1
 
 slim = tf.contrib.slim
 
 
-class EASTMobileNetV1FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
-  """SSD Feature Extractor using MobilenetV1 features."""
+class EASTMobileNetV1FeatureExtractor(east_meta_arch.EASTFeatureExtractor):
+  """EAST Feature Extractor using MobilenetV1 features."""
 
   def __init__(self,
                depth_multiplier,
                min_depth,
                conv_hyperparams,
                reuse_weights=None):
-    """MobileNetV1 Feature Extractor for SSD Models.
+    """MobileNetV1 Feature Extractor for EAST Models.
 
     Args:
       depth_multiplier: float depth multiplier for feature extractor.
@@ -44,7 +44,7 @@ class EASTMobileNetV1FeatureExtractor(ssd_meta_arch.SSDFeatureExtractor):
         depth_multiplier, min_depth, conv_hyperparams, reuse_weights)
 
   def preprocess(self, resized_inputs):
-    """SSD preprocessing.
+    """EAST preprocessing.
 
     Maps pixel values to the range [-1, 1].
 

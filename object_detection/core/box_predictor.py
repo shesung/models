@@ -632,6 +632,7 @@ class ScoreRotBoxPredictor(BoxPredictor):
     """
     features_depth = static_shape.get_depth(image_features.get_shape())
     depth = max(min(features_depth, self._max_depth), self._min_depth)
+
     num_class_slots = 1
     net = image_features
     with slim.arg_scope(self._conv_hyperparams), \
@@ -647,22 +648,17 @@ class ScoreRotBoxPredictor(BoxPredictor):
             net, num_predictions_per_location * self._box_code_size,
             [self._kernel_size, self._kernel_size],
             scope='BoxEncodingPredictor')
-
         angle_encodings = slim.conv2d(
-            net, num_predictions_per_location * self._box_code_size,
+            net, num_predictions_per_location * 1,
             [self._kernel_size, self._kernel_size],
             scope='AngleEncodingPredictor')
-
       if self._use_dropout:
         net = slim.dropout(net, keep_prob=self._dropout_keep_prob)
-        score_predictions = slim.conv2d(
-            net, num_predictions_per_location * 1,
-            [self._kernel_size, self._kernel_size], scope='ScorePredictor')
-      '''
-        if self._apply_sigmoid_to_scores:
-          score_predictions = tf.sigmoid(
-              score_predictions)
-      '''
+      score_predictions = slim.conv2d(
+          net, num_predictions_per_location * 1,
+          [self._kernel_size, self._kernel_size], scope='ScorePredictor')
+      score_predictions = tf.sigmoid(score_predictions)
+
     batch_size = static_shape.get_batch_size(image_features.get_shape())
     if batch_size is None:
       features_height = static_shape.get_height(image_features.get_shape())
@@ -671,7 +667,7 @@ class ScoreRotBoxPredictor(BoxPredictor):
                                     num_predictions_per_location)
       box_encodings = tf.reshape(
           box_encodings,
-          [-1, flattened_predictions_size, 1, self._box_code_size-1])
+          [-1, flattened_predictions_size, 1, self._box_code_size])
       angle_encodings = tf.reshape(
           angle_encodings,
           [-1, flattened_predictions_size, 1, 1])
@@ -680,7 +676,7 @@ class ScoreRotBoxPredictor(BoxPredictor):
           [-1, flattened_predictions_size, 1])
     else:
       box_encodings = tf.reshape(
-          box_encodings, [batch_size, -1, 1, self._box_code_size-1])
+          box_encodings, [batch_size, -1, 1, self._box_code_size])
       angle_encodings = tf.reshape(
           angle_encodings,
           [-1, flattened_predictions_size, 1, 1])
