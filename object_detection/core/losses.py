@@ -335,6 +335,37 @@ class BootstrappedSigmoidClassificationLoss(Loss):
       return tf.reduce_sum(per_entry_cross_ent * tf.expand_dims(weights, 2), 2)
     return tf.reduce_sum(per_entry_cross_ent * tf.expand_dims(weights, 2))
 
+class EastIOULocalizationLoss(Loss):
+	def __init__(self, alpha):
+		self._alpha = alpha
+	def _compute_loss(self, prediction_tensor, target_tensor, weights):
+		predicted_boxes = box_list.BoxList(tf.reshape(prediction_tensor[:,:,0:4], [-1, 4]))
+		target_boxes = box_list.BoxList(tf.reshape(target_tensor[:,:,0:4], [-1, 4]))
+		iou_loss = -1.0 * tf.log(box_list_ops.matched_iou(predicted_boxes, target_boxes))
+		pre_angle = tf.reshape(prediction_tensor[:,:,4], [-1, 4])
+		target_angle = tf.reshape(target_tensor[:,:,4], [-1, 4])
+		angle_loss = self._alpha * (1.0 - tf.cos(tf.sub(pre_angle, target_angle)))
+		return tf.reduce_sum(tf.reshape(weights, [-1]) * iou_loss) +
+				tf.reduce_sum(tf.reshape(weights, [-1]) * angle_loss)
+'''
+class EastRotationLoss(Loss):
+	def __init__(self, anchorwise_output=False):
+		self._anchorwise_output = anchorwise_output
+
+	def _compute_loss(self, prediction_tensor, target_tensor, weights):
+		predicted_rotations = box_list.BoxList(tf.reshape(prediction_tensor, [-1, 1]))
+		target_boxes = box_list.BoxList(tf.reshape(target_tensor, [-1, 1]))
+		angle_loss = (1.0 - tf.cos(tf.sub(prediction_tensor, target_tensor)))
+		return tf.reduce_sum(tf.reshape(weights, [-1]) * angle_loss)
+'''
+class EastMaskLoss(Loss):
+	def __init__(self, anchorwise_output=False):
+		self._anchorwise_output = anchorwise_output
+	def _compute_loss(self, prediction_tensor, target_tensor, weights):
+		weights = tf.expand_dims(weights, 2)
+		per_entry_cross_ent = (tf.nn.sigmoid_cross_entropy_with_logits(
+						labels=target_tensor, logits=prediction_tensor))
+	return tf.reduce_sum(per_entry_cross_ent * weights)
 
 class HardExampleMiner(object):
   """Hard example mining for regions in a list of images.

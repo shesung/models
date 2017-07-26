@@ -117,8 +117,34 @@ class EastBoxCoder(object):
       bown /= self._scale_factors[0]
       left /= self._scale_factors[1]
       right /= self._scale_factors[1]
-    ymin = ycenter_a - top
-    xmin = xcenter_a - left
-    ymax = ycenter_a + bown
-    xmax = xcenter_a + right
-    return box_list.BoxList(tf.transpose(tf.stack([ymin, xmin, ymax, xmax])))
+
+	diff_x = -1* (right - left)*0.5
+	diff_y = -1*(top - bown)*0.5
+	x1 = left + diff_x
+	y1 = bown + diff_y
+	x2 = right + diff_x
+	y2 + top + diff_y
+
+	diff_x_std  = tf.multiply(diff_x, tf.cos(rotations)) +
+					tf.multiply(diff_y, tf.sin(rotations))
+	diff_y_std  = tf.multiply(diff_y, tf.cos(rotations)) +
+					tf.multiply(diff_x, tf.sin(rotations))
+
+	x1_std  = tf.multiply(x1, tf.cos(rotations)) +
+					tf.multiply(y1, tf.sin(rotations))
+	y1_std  = tf.multiply(y1, tf.cos(rotations)) +
+					tf.multiply(x1, tf.sin(rotations))
+	x2_std  = tf.multiply(x2, tf.cos(rotations)) +
+					tf.multiply(y2, tf.sin(rotations))
+	y2_std  = tf.multiply(y2, tf.cos(rotations)) +
+					tf.multiply(x2, tf.sin(rotations))
+
+	dx = xcenter_a - diff_x_std
+	dy = ycenter_a - diff_y_std
+
+	xmin = x1_std + dx
+	ymin = y1_std + dy
+	xmax = x2_std + dx
+	ymax + y2_std + dy
+
+	return box_list.BoxList(tf.transpose(tf.stack([ymin, xmin, ymax, xmax])))

@@ -33,11 +33,11 @@ from object_detection.utils import static_shape
 
 slim = tf.contrib.slim
 
-BOX_ENCODINGS = 'box_encodings'
 CLASS_PREDICTIONS_WITH_BACKGROUND = 'class_predictions_with_background'
+BOX_ENCODINGS = 'box_encodings'
+ANGLE_ENCODINGS = 'angle_encodings'
 MASK_PREDICTIONS = 'mask_predictions'
 SCORE_PREDICTIONS = 'score_predictions'
-
 
 class BoxPredictor(object):
   """BoxPredictor."""
@@ -632,8 +632,8 @@ class ScoreRotBoxPredictor(BoxPredictor):
     """
     features_depth = static_shape.get_depth(image_features.get_shape())
     depth = max(min(features_depth, self._max_depth), self._min_depth)
-
-    net = image_features
+	num_class_slots = 1
+	net = image_features
     with slim.arg_scope(self._conv_hyperparams), \
          slim.arg_scope([slim.dropout], is_training=self._is_training):
       # Add additional conv layers before the predictor.
@@ -647,15 +647,22 @@ class ScoreRotBoxPredictor(BoxPredictor):
             net, num_predictions_per_location * self._box_code_size,
             [self._kernel_size, self._kernel_size],
             scope='BoxEncodingPredictor')
-        if self._use_dropout:
+
+        angle_encodings = slim.conv2d(
+            net, num_predictions_per_location * self._box_code_size,
+            [self._kernel_size, self._kernel_size],
+            scope='AngleEncodingPredictor')
+
+		if self._use_dropout:
           net = slim.dropout(net, keep_prob=self._dropout_keep_prob)
         score_predictions = slim.conv2d(
             net, num_predictions_per_location * 1,
             [self._kernel_size, self._kernel_size], scope='ScorePredictor')
+		'''
         if self._apply_sigmoid_to_scores:
           score_predictions = tf.sigmoid(
               score_predictions)
-
+		'''
     batch_size = static_shape.get_batch_size(image_features.get_shape())
     if batch_size is None:
       features_height = static_shape.get_height(image_features.get_shape())
@@ -664,14 +671,21 @@ class ScoreRotBoxPredictor(BoxPredictor):
                                     num_predictions_per_location)
       box_encodings = tf.reshape(
           box_encodings,
-          [-1, flattened_predictions_size, 1, self._box_code_size])
+          [-1, flattened_predictions_size, 1, self._box_code_size-1])
+      angle_encodings = tf.reshape(
+          angle_encodings,
+          [-1, flattened_predictions_size, 1, 1])
       score_predictions = tf.reshape(
           score_predictions,
           [-1, flattened_predictions_size, 1])
     else:
       box_encodings = tf.reshape(
-          box_encodings, [batch_size, -1, 1, self._box_code_size])
+          box_encodings, [batch_size, -1, 1, self._box_code_size-1])
+      angle_encodings = tf.reshape(
+          angle_encodings,
+          [-1, flattened_predictions_size, 1, 1])
       score_predictions = tf.reshape(
           score_predictions, [batch_size, -1, 1])
     return {BOX_ENCODINGS: box_encodings,
+			ANGLE_ENCODINGS: angle_encodings,
             SCORE_PREDICTIONS: score_predictions}
