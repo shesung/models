@@ -15,8 +15,6 @@
 
 """Tests for google3.research.vale.object_detection.losses."""
 import math
-import sys
-sys.path.insert(0, "/home/chenxiang/code/tensorflow/_python_build")
 
 import numpy as np
 import tensorflow as tf
@@ -559,19 +557,21 @@ class HardExampleMinerTest(tf.test.TestCase):
         cls_loss_output = sess.run(cls_loss)
         self.assertAllClose(cls_loss_output, exp_cls_loss)
 
-class EastIOULocalizationLossTest(tf.test.TestCase):
+class RBoxLocalizationLossTest(tf.test.TestCase):
 
   def testReturnsCorrectLoss(self):
-    prediction_tensor = tf.constant([[[1.5, 0, 2.4, 1,0],
-                                      [0, 0, 1, 1,0],
-                                      [0, 0, 2, 5, 0]]])
-    target_tensor = tf.constant([[[1.5, 0, 2.4, 1,0],
-                                  [0, 0, 1, 1,0],
-                                  [0, 0, 10, 10, 0]]])
-    weights = [[1.0, .5, 2.0]]
-    loss_op = losses.EastIOULocalizationLoss(1.0)
+    prediction_tensor = tf.constant([[[0, 0, 1, 1, 0],
+                                      [0, 0, 1, 1, 0],
+                                      [0, 0, 1, 1, 0]]],
+                                    tf.float32)
+    target_tensor = tf.constant([[[0, 0, 1, 1, 0],
+                                  [0, 0, 1, math.e, 0],
+                                  [0, 0, 1, math.e, math.pi*0.5]]],
+                                tf.float32)
+    weights = tf.constant([[1.0, .5, 2.0]], tf.float32)
+    loss_op = losses.RBoxLocalizationLoss(alpha=2.0)
     loss = loss_op(prediction_tensor, target_tensor, weights=weights)
-    exp_loss = 2.0
+    exp_loss = 0.5 * 1 + 2.0 * (1 + 2.0 * 1)
     with self.test_session() as sess:
       loss_output = sess.run(loss)
       self.assertAllClose(loss_output, exp_loss)

@@ -16,9 +16,6 @@
 """Tests for object_detection.core.box_predictor."""
 
 import numpy as np
-import sys
-sys.path.insert(0, "/home/chenxiang/code/tensorflow/_python_build")
-
 import tensorflow as tf
 
 from google.protobuf import text_format
@@ -376,4 +373,4 @@ class ScoreRotBoxPredictor(tf.test.TestCase):
       self.assertAllEqual(angle_encodings_shape, [4, expected_num_anchors, 1, 1])
       self.assertAllEqual(mask_predictions_shape,[4, expected_num_anchors, 1])
 if __name__ == '__main__':
-    tf.test.main()
+  tf.test.main()
