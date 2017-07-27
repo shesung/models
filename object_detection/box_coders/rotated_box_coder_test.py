@@ -1,6 +1,4 @@
 """Tests for object_detection.box_coder.rotated_box_coder."""
-import sys
-sys.path.insert(0, "/home/chenxiang/code/tensorflow/_python_build")
 
 import tensorflow as tf
 
@@ -38,10 +36,10 @@ class RotatedBoxCoderTest(tf.test.TestCase):
     anchors = [[50.0, 50.0, 70.0, 90.0],
                [50.0, 70.0, 70.0, 90.0],
                [13.0, 18.0, 15.0, 20.0]]
-    rotations = [math.pi*0.5, math.pi*0.5,0]
+    rotations = [math.pi*0.5, math.pi*0.5, 0]
     expected_rel_codes = [[40.0, 60.0, 80.0, 80.0],
                           [40, 60.0, 80.0, 80.0],
-                          [6.0, 4.0, 9.0, 11.0]]
+                          [4, -1, 24, 49]]
 
     anchors = box_list.BoxList(tf.constant(anchors))
     coder = rotated_box_coder.RotatedBoxCoder()
