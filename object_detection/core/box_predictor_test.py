@@ -16,6 +16,9 @@
 """Tests for object_detection.core.box_predictor."""
 
 import numpy as np
+import sys
+sys.path.insert(0, "/home/chenxiang/code/tensorflow/_python_build")
+
 import tensorflow as tf
 
 from google.protobuf import text_format
@@ -318,6 +321,59 @@ class ConvolutionalBoxPredictorTest(tf.test.TestCase):
       self.assertAllEqual(objectness_predictions_shape,
                           [4, expected_num_anchors, 1])
 
+class ScoreRotBoxPredictor(tf.test.TestCase):
+  def _build_arg_scope_with_conv_hyperparams(self):
+    conv_hyperparams = hyperparams_pb2.Hyperparams()
+    conv_hyperparams_text_proto = """
+      activation: RELU_6
+      regularizer {
+        l2_regularizer {
+        }
+      }
+      initializer {
+        truncated_normal_initializer {
+        }
+      }
+    """
+    text_format.Merge(conv_hyperparams_text_proto, conv_hyperparams)
+    return hyperparams_builder.build(conv_hyperparams, is_training=True)
 
+  def test_get_boxes_for_five_aspect_ratios_per_location_fully_convolutional(
+      self):
+    image_features = tf.placeholder(dtype=tf.float32, shape=[4, None, None, 64])
+    conv_box_predictor = box_predictor.ScoreRotBoxPredictor(
+        is_training=False,
+        num_classes=1,
+        conv_hyperparams=self._build_arg_scope_with_conv_hyperparams(),
+        min_depth=0,
+        max_depth=32,
+        num_layers_before_predictor=1,
+        use_dropout=False,
+        dropout_keep_prob=0.8,
+        kernel_size=1,
+        box_code_size=4
+    )
+    box_predictions = conv_box_predictor.predict(
+        image_features, num_predictions_per_location=1, scope='BoxPredictor')
+    box_encodings = box_predictions[box_predictor.BOX_ENCODINGS]
+    angle_encodings = box_predictions[box_predictor.ANGLE_ENCODINGS]
+    mask_predictions = box_predictions[box_predictor.SCORE_PREDICTIONS]
+    init_op = tf.global_variables_initializer()
+
+    resolution = 32
+    expected_num_anchors = resolution*resolution
+    with self.test_session() as sess:
+      sess.run(init_op)
+      (box_encodings_shape,
+       angle_encodings_shape,
+       mask_predictions_shape) = sess.run(
+           [tf.shape(box_encodings),
+            tf.shape(angle_encodings),
+            tf.shape(mask_predictions)],
+           feed_dict={image_features:
+                      np.random.rand(4, resolution, resolution, 64)})
+      self.assertAllEqual(box_encodings_shape, [4, expected_num_anchors, 1, 4])
+      self.assertAllEqual(angle_encodings_shape, [4, expected_num_anchors, 1, 1])
+      self.assertAllEqual(mask_predictions_shape,[4, expected_num_anchors, 1])
 if __name__ == '__main__':
-  tf.test.main()
+    tf.test.main()

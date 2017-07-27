@@ -657,7 +657,7 @@ class ScoreRotBoxPredictor(BoxPredictor):
       score_predictions = slim.conv2d(
           net, num_predictions_per_location * 1,
           [self._kernel_size, self._kernel_size], scope='ScorePredictor')
-      score_predictions = tf.sigmoid(score_predictions)
+      #score_predictions = tf.sigmoid(score_predictions)
 
     batch_size = static_shape.get_batch_size(image_features.get_shape())
     if batch_size is None:
@@ -679,7 +679,7 @@ class ScoreRotBoxPredictor(BoxPredictor):
           box_encodings, [batch_size, -1, 1, self._box_code_size])
       angle_encodings = tf.reshape(
           angle_encodings,
-          [-1, flattened_predictions_size, 1, 1])
+          [batch_size, -1, 1, 1])
       score_predictions = tf.reshape(
           score_predictions, [batch_size, -1, 1])
     return {BOX_ENCODINGS: box_encodings,
