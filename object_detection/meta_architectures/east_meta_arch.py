@@ -27,6 +27,8 @@ from object_detection.core import box_list
 from object_detection.core import box_predictor as bpredictor
 from object_detection.core import model
 from object_detection.core import standard_fields as fields
+from object_detection.core import box_list_ops
+from object_detection.core.matcher import Match
 from object_detection.utils import variables_helper
 
 slim = tf.contrib.slim
@@ -208,11 +210,9 @@ class EASTMetaArch(model.DetectionModel):
       prediction_dict: a dictionary holding "raw" prediction tensors:
         1) box_encodings: 4-D float tensor of shape [batch_size, num_anchors,
           box_code_dimension] containing predicted boxes.
-        2) class_predictions_with_background: 3-D float tensor of shape
-          [batch_size, num_anchors, num_classes+1] containing class predictions
-          (logits) for each of the anchors.  Note that this tensor *includes*
-          background class predictions (at class index 0).
-        3) feature_maps: a list of tensors where the ith tensor has shape
+        2) rotations: 3-D float tensor of shape [batch_size, num_anchors, 1]
+        3) scores: 3-D float tensor of shape [batch_size, num_anchors, 1]
+        4) feature_maps: a list of tensors where the ith tensor has shape
           [batch, height_i, width_i, depth_i].
     """
     with tf.variable_scope(None, self._extract_features_scope,
@@ -293,7 +293,7 @@ class EASTMetaArch(model.DetectionModel):
       box_encodings = tf.concat(box_encodings_list, 1)
       rotation_encodings = tf.concat(rotation_encodings_list, 1)
       score_encodings = tf.concat(score_encodings_list, 1)
-    return box_encodings, rotaiton_encodings, score_encodings
+    return box_encodings, rotation_encodings, score_encodings
 
   def _get_feature_map_spatial_dims(self, feature_maps):
     """Return list of spatial dimensions for each feature map in a list.
@@ -342,7 +342,8 @@ class EASTMetaArch(model.DetectionModel):
         `class_predictions_with_background` fields.
     """
     if ('box_encodings' not in prediction_dict or
-        'class_predictions_with_background' not in prediction_dict):
+        'rotations' not in prediction_dict or
+        'scores' not in prediction_dict):
       raise ValueError('prediction_dict does not contain expected entries.')
     with tf.name_scope('Postprocessor'):
       box_encodings = prediction_dict['box_encodings']
@@ -356,10 +357,11 @@ class EASTMetaArch(model.DetectionModel):
       detection_boxes = tf.expand_dims(detection_boxes, axis=2)
 
       detection_scores = self._score_conversion_fn(score_predictions)
-      clip_window = tf.constant([0, 0, 1, 1], tf.float32)
+      clip_window = None #tf.constant([0, 0, 1, 1], tf.float32)
       detections = self._non_max_suppression_fn(detection_boxes,
                                                 detection_scores,
                                                 clip_window=clip_window)
+      # TO DO: append rotations to box coordinates
     return detections
 
   def loss(self, prediction_dict, scope=None):
@@ -396,13 +398,14 @@ class EASTMetaArch(model.DetectionModel):
       num_matches = tf.stack(
           [match.num_matched_columns() for match in match_list])
       predicted_rbox = tf.concat([prediction_dict['box_encodings'],
-                                  prediction_dict['angle_encodings']], -1)
+                                  prediction_dict['rotations']], -1)
       rbox_losses = self._localization_loss(
           predicted_rbox,
           batch_rbox_targets,
-          weights=batch_reg_weights)
+          weights=batch_rbox_weights)
+      predicted_score = tf.squeeze(prediction_dict['scores'], axis=2)
       score_losses = self._classification_loss(
-          prediction_dict['score_encodings'],
+          predicted_score,
           batch_score_targets,
           weights=batch_score_weights)
 
@@ -454,19 +457,18 @@ class EASTMetaArch(model.DetectionModel):
     groundtruth_boxlists = [
         box_list.BoxList(boxes) for boxes in groundtruth_boxes_list
     ]
-    anchors_batch = len(gt_box_batch) * [anchors_batch]
 
     score_targets_list = []
     score_weights_list = []
     rbox_targets_list = []
     rbox_weights_list = []
     match_list = []
-    for anchors, gt_boxes, gt_rotations, gt_masks in zip(anchors_batch,
-        groundtruth_boxlists, groundtruth_rotations_list, groundtruth_masks_list):
+    for gt_boxes, gt_rotations, gt_masks in zip(groundtruth_boxlists,
+        groundtruth_rotations_list, groundtruth_masks_list):
 
-      match = self._match()
+      match = self._match(self.anchors, gt_masks)
       (score_targets, score_weights) = self._assign_score_target(match)
-      (rbox_targets, rbox_weights) = self._assign_rbox_target(anchors, gt_boxes,
+      (rbox_targets, rbox_weights) = self._assign_rbox_target(self.anchors, gt_boxes,
                                                               gt_rotations, match)
       score_targets_list.append(score_targets)
       score_weights_list.append(score_weights)
@@ -486,12 +488,14 @@ class EASTMetaArch(model.DetectionModel):
       raise ValueError('anchors must be an BoxList')
 
     (ycenter, xcenter, height, width) = anchors.get_center_coordinates_and_sizes()
-    yindices = tf.cast(tf.round(ycenter), tf.int32)
-    xindices = tf.cast(tf.round(xcenter), tf.int32)
+    # Note: anchors use absolute coordinates, so as the groundtruth_boxes
+    yindices = tf.cast(tf.floor(ycenter * 0.25), tf.int32)
+    xindices = tf.cast(tf.floor(xcenter * 0.25), tf.int32)
     coordinates = tf.stack([yindices, xindices], -1)
     gt_masks_max = tf.reduce_max(groundtruth_masks, 0)
+    gt_masks_argmax = tf.cast(tf.argmax(groundtruth_masks, 0), tf.int32)
     matched_obj_indices = tf.where(tf.greater(gt_masks_max, 0),
-                                   tf.argmax(groundtruth_masks, 0),
+                                   gt_masks_argmax,
                                    -1*tf.ones_like(gt_masks_max))
     return Match(tf.gather_nd(matched_obj_indices, coordinates))
 
@@ -507,11 +511,10 @@ class EASTMetaArch(model.DetectionModel):
     score_targets = tf.cast(match.matched_column_indicator(), tf.float32)
     matched_indicator = tf.cast(match.matched_column_indicator(), tf.float32)
     unmatched_indicator = 1.0 - matched_indicator
-    num_matched = match.num_matched_columns()
-    num_unmatched = match.num_unmatched_columns()
-    num_total = num_matched + num_unmatched
-    score_weights = ( num_unmatched / num_total * matched_indicator
-                     +num_matched / num_total * unmatched_indicator)
+    num_matched = tf.cast(match.num_matched_columns(), tf.float32)
+    num_unmatched = tf.cast(match.num_unmatched_columns(), tf.float32)
+    beta = 1.0 - num_matched / (num_matched + num_unmatched)
+    score_weights = beta * matched_indicator + (1.0 - beta) * unmatched_indicator
     return score_targets, score_weights
 
   def _assign_rbox_target(self, anchors, groundtruth_boxes, groundtruth_rotations,

@@ -58,12 +58,12 @@ class RotatedBoxCoder(object):
 
     cos_theta = tf.cos(rotations)
     sin_theta = tf.sin(rotations)
-    center_x  = tf.multiply(direct_x, cos_theta) - tf.multiply(direct_y, sin_theta)
-    center_y  = tf.multiply(direct_y, cos_theta) + tf.multiply(direct_x, sin_theta)
+    center_x  = tf.multiply(direct_x, cos_theta) + tf.multiply(direct_y, sin_theta)
+    center_y  = tf.multiply(direct_y, cos_theta) - tf.multiply(direct_x, sin_theta)
 
-    top   = 0.5 * h - center_y
-    down  = -0.5 * h - center_y
+    top   = -0.5 * h - center_y
     left  = -0.5 * w - center_x
+    down  = 0.5 * h - center_y
     right = 0.5 * w - center_x
     return tf.transpose(tf.stack([top, left, down, right, rotations]))
 
@@ -80,31 +80,21 @@ class RotatedBoxCoder(object):
     ycenter_a, xcenter_a, ha, wa = anchors.get_center_coordinates_and_sizes()
     top, left, down, right = tf.unstack(tf.transpose(rel_codes))
 
-    diff_x = (right + left)*0.5
-    diff_y = (top + down)*0.5
-    #x1 = diff_x - left
-    #y1 = diff_y - down
-    #x2 = right + diff_x
-    #y2 = top + diff_y
+    rot_center_x = (right + left) * 0.5
+    rot_center_y = (top + down) * 0.5
     sin_theta = tf.sin(rotations)
     cos_theta = tf.cos(rotations)
-    dx  = tf.multiply(diff_x, cos_theta) + tf.multiply(diff_y, sin_theta)
-    dy  = tf.multiply(diff_y, cos_theta) - tf.multiply(diff_x, sin_theta)
+    center_x = tf.multiply(rot_center_x, cos_theta) - tf.multiply(rot_center_y, sin_theta)
+    center_y = tf.multiply(rot_center_y, cos_theta) + tf.multiply(rot_center_x, sin_theta)
 
-    center_x = xcenter_a + dx
-    center_y = ycenter_a + dy
-    #x1_std  = tf.multiply(x1, tf.cos(rotations)) + tf.multiply(y1, tf.sin(rotations))
-    #y1_std  = tf.multiply(y1, tf.cos(rotations)) + tf.multiply(x1, tf.sin(rotations))
-    #x2_std  = tf.multiply(x2, tf.cos(rotations)) + tf.multiply(y2, tf.sin(rotations))
-    #y2_std  = tf.multiply(y2, tf.cos(rotations)) + tf.multiply(x2, tf.sin(rotations))
+    abs_center_x = xcenter_a + center_x
+    abs_center_y = ycenter_a + center_y
 
-    #dx = xcenter_a - diff_x_std
-    #dy = ycenter_a - diff_y_std
-    w = tf.abs(right) + tf.abs(left)
-    h = tf.abs(top) + tf.abs(down)
-    xmin = center_x - 0.5*w
-    ymin = center_y - 0.5*h
-    xmax = center_x + 0.5*w
-    ymax = center_y + 0.5*h
+    w = right - left
+    h = down - top
+    ymin = abs_center_y - 0.5*h
+    xmin = abs_center_x - 0.5*w
+    ymax = abs_center_y + 0.5*h
+    xmax = abs_center_x + 0.5*w
 
-    return tf.transpose(tf.stack([ymin, xmin, ymax, xmax]))
+    return box_list.BoxList(tf.transpose(tf.stack([ymin, xmin, ymax, xmax])))

@@ -342,7 +342,8 @@ class RBoxLocalizationLoss(Loss):
   def _compute_loss(self, prediction_tensor, target_tensor, weights):
     predicted_boxes = box_list.BoxList(tf.reshape(prediction_tensor[:,:,0:4], [-1, 4]))
     target_boxes = box_list.BoxList(tf.reshape(target_tensor[:,:,0:4], [-1, 4]))
-    iou_loss = -1.0 * tf.log(box_list_ops.matched_iou(predicted_boxes, target_boxes))
+    ious = box_list_ops.matched_iou(predicted_boxes, target_boxes)
+    iou_loss = -1.0 * tf.log(tf.clip_by_value(ious, 1e-10, 1.0))
     predicted_angle = tf.reshape(prediction_tensor[:,:,4], [-1])
     target_angle = tf.reshape(target_tensor[:,:,4], [-1])
     angle_loss = 1.0 - tf.cos(predicted_angle - target_angle)
@@ -352,7 +353,6 @@ class RBoxLocalizationLoss(Loss):
 
 class ScoreLoss(Loss):
   def _compute_loss(self, prediction_tensor, target_tensor, weights):
-    weights = tf.expand_dims(weights, 2)
     per_entry_cross_ent = (tf.nn.sigmoid_cross_entropy_with_logits(
         labels=target_tensor, logits=prediction_tensor))
     return tf.reduce_sum(per_entry_cross_ent * weights)
