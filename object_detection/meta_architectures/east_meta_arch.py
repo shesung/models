@@ -219,8 +219,9 @@ class EASTMetaArch(model.DetectionModel):
                            [preprocessed_inputs]):
       feature_maps = self._feature_extractor.extract_features(
           preprocessed_inputs)
-    feature_map_spatial_dims = self._get_feature_map_spatial_dims(feature_maps)
-    self._anchors = self._anchor_generator.generate(feature_map_spatial_dims)
+    feature_map_shape = tf.shape(feature_maps[0])
+    self._anchors = self._anchor_generator.generate(
+        [(feature_map_shape[1], feature_map_shape[2])])
     (box_encodings, rotation_encodings, score_encodings
     ) = self._add_box_predictions_to_feature_maps(feature_maps)
     predictions_dict = {
@@ -294,21 +295,6 @@ class EASTMetaArch(model.DetectionModel):
       rotation_encodings = tf.concat(rotation_encodings_list, 1)
       score_encodings = tf.concat(score_encodings_list, 1)
     return box_encodings, rotation_encodings, score_encodings
-
-  def _get_feature_map_spatial_dims(self, feature_maps):
-    """Return list of spatial dimensions for each feature map in a list.
-
-    Args:
-      feature_maps: a list of tensors where the ith tensor has shape
-          [batch, height_i, width_i, depth_i].
-
-    Returns:
-      a list of pairs (height, width) for each feature map in feature_maps
-    """
-    feature_map_shapes = [
-        feature_map.get_shape().as_list() for feature_map in feature_maps
-    ]
-    return [(shape[1], shape[2]) for shape in feature_map_shapes]
 
   def postprocess(self, prediction_dict):
     """Converts prediction tensors to final detections.
@@ -492,6 +478,7 @@ class EASTMetaArch(model.DetectionModel):
     yindices = tf.cast(tf.floor(ycenter * 0.25), tf.int32)
     xindices = tf.cast(tf.floor(xcenter * 0.25), tf.int32)
     coordinates = tf.stack([yindices, xindices], -1)
+    groundtruth_masks = tf.cast(groundtruth_masks, tf.int32)
     gt_masks_max = tf.reduce_max(groundtruth_masks, 0)
     gt_masks_argmax = tf.cast(tf.argmax(groundtruth_masks, 0), tf.int32)
     matched_obj_indices = tf.where(tf.greater(gt_masks_max, 0),
@@ -617,6 +604,7 @@ class EASTMetaArch(model.DetectionModel):
     variables_to_restore = (
         variables_helper.get_variables_available_in_checkpoint(
             variables_to_restore, checkpoint_path))
+    print variables_to_restore.keys()
     saver = tf.train.Saver(variables_to_restore)
 
     def restore(sess):

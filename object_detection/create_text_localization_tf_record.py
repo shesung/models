@@ -149,7 +149,7 @@ def main(_):
     label_map_dict = label_map_util.get_label_map_dict('object_detection/data/text_label_map.pbtxt')
 
     data_dir = FLAGS.data_dir
-    for fn in os.listdir(data_dir):
+    for fn in os.listdir(data_dir)[:16]:
         if os.path.splitext(fn)[1] == '.gt':
             continue
 
