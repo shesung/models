@@ -85,11 +85,12 @@ def dict_to_tf_example(data,
   for obj in data['object']:
     difficult = bool(int(obj['difficult']))
     difficult_obj.append(int(difficult))
-    
-    xmin.append(float(obj['bndbox']['xmin']) / width)
-    ymin.append(float(obj['bndbox']['ymin']) / height)
-    xmax.append(float(obj['bndbox']['xmax']) / width)
-    ymax.append(float(obj['bndbox']['ymax']) / height)
+
+    # we use absolute coordinates in east pipeline
+    xmin.append(float(obj['bndbox']['xmin']))
+    ymin.append(float(obj['bndbox']['ymin']))
+    xmax.append(float(obj['bndbox']['xmax']))
+    ymax.append(float(obj['bndbox']['ymax']))
     rotation.append(float(obj['rotation']))
     mask = mask + obj['mask']
     classes_text.append(obj['name'].encode('utf8'))
@@ -128,7 +129,7 @@ def rbox_2_polygon(x, y, w, h, rad):
     h2 = h*0.5
     xc = x + w2
     yc = y + h2
-    m_rot = np.array([[np.cos(rad), -np.sin(rad)], 
+    m_rot = np.array([[np.cos(rad), -np.sin(rad)],
                       [np.sin(rad), np.cos(rad)]], dtype=np.float32)
     pts_ = np.array([[-w2,-h2],
                      [w2,-h2],
@@ -193,8 +194,8 @@ def main(_):
             'filename':fn,
             'object': obj_list,
         }
-        
-        print(os.path.join(data_dir, fn), im_width, im_height, len(data['object']))  ###        
+
+        print(os.path.join(data_dir, fn), im_width, im_height, len(data['object']))  ###
         if len(data['object']) >0:
             tf_example = dict_to_tf_example(data, data_dir, label_map_dict)
             writer.write(tf_example.SerializeToString())

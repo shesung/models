@@ -31,6 +31,14 @@ class RotatedBoxCoder(object):
     return 4
 
   def encode(self, boxes, rotations, anchors):
+    with tf.name_scope('Encode'):
+      return self._encode(boxes, rotations, anchors)
+
+  def decode(self, rel_codes, rotations, anchors):
+    with tf.name_scope('Decode'):
+      return self._decode(rel_codes, rotations, anchors)
+
+  def _encode(self, boxes, rotations, anchors):
     """Encodes a box collection with respect to an anchor collection.
 
     Args:
@@ -59,7 +67,7 @@ class RotatedBoxCoder(object):
     right = 0.5 * w - center_x
     return tf.transpose(tf.stack([top, down, left, right, rotations]))
 
-  def decode(self, rel_codes, rotations, anchors):
+  def _decode(self, rel_codes, rotations, anchors):
     """Decodes relative codes to boxes.
 
     Args:
