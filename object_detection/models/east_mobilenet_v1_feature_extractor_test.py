@@ -15,8 +15,6 @@
 
 """Tests for ssd_mobilenet_v1_feature_extractor."""
 import numpy as np
-import sys
-sys.path.insert(0, "/home/chenxiang/code/tensorflow/_python_build")
 
 import tensorflow as tf
 

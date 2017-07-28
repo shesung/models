@@ -16,9 +16,9 @@ class RotatedBoxCoderTest(tf.test.TestCase):
                [13.0, 18.0, 15.0, 20.0],
                [13.0, 18.0, 15.0, 20.0]]
     rotations = [0.0, 0.0, math.pi*0.5]
-    expected_rel_codes = [[5.0, 5.0, 10.0, 10.0, 0.0],
-                          [4.0, 6.0, 9.0, 11.0, 0.0],
-                          [6.0, 4.0, 9.0, 11.0, math.pi*0.5]]
+    expected_rel_codes = [[5.0, -10.0, -5.0, 10.0, 0.0],
+                          [6.0, -9.0, -4.0, 11.0, 0.0],
+                          [6.0, -11.0, -4.0, 9.0, math.pi*0.5]]
 
     boxes = box_list.BoxList(tf.constant(boxes))
     anchors = box_list.BoxList(tf.constant(anchors))
@@ -30,9 +30,9 @@ class RotatedBoxCoderTest(tf.test.TestCase):
       self.assertAllClose(rel_codes_out, expected_rel_codes)
 
   def test_decode(self):
-    boxes = [[20.0, 20.0, 10.0, 10.0],
-             [10.0, 30.0, 10.0, 10.0],
-             [10.0, 10.0, 20.0, 30.0]]
+    boxes = [[20.0, -10.0, -20.0, 10.0],
+             [10.0, -10.0, -30.0, 10.0],
+             [10.0, -20.0, -10.0, 30.0]]
     anchors = [[50.0, 50.0, 70.0, 90.0],
                [50.0, 70.0, 70.0, 90.0],
                [13.0, 18.0, 15.0, 20.0]]

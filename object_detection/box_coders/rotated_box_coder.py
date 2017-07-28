@@ -58,14 +58,14 @@ class RotatedBoxCoder(object):
 
     cos_theta = tf.cos(rotations)
     sin_theta = tf.sin(rotations)
-    center_x  = tf.multiply(direct_x, cos_theta) + tf.multiply(direct_y, sin_theta)
-    center_y  = tf.multiply(direct_y, cos_theta) - tf.multiply(direct_x, sin_theta)
+    center_x  = tf.multiply(direct_x, cos_theta) - tf.multiply(direct_y, sin_theta)
+    center_y  = tf.multiply(direct_y, cos_theta) + tf.multiply(direct_x, sin_theta)
 
-    top   = 0.5 * h + center_y
-    down  = 0.5 * h - center_y
-    left  = 0.5 * w + center_x
+    top   = 0.5 * h - center_y
+    down  = -0.5 * h - center_y
+    left  = -0.5 * w - center_x
     right = 0.5 * w - center_x
-    return tf.transpose(tf.stack([top, down, left, right, rotations]))
+    return tf.transpose(tf.stack([top, left, down, right, rotations]))
 
   def _decode(self, rel_codes, rotations, anchors):
     """Decodes relative codes to boxes.
@@ -78,10 +78,10 @@ class RotatedBoxCoder(object):
       boxes: BoxList holding N bounding boxes.
     """
     ycenter_a, xcenter_a, ha, wa = anchors.get_center_coordinates_and_sizes()
-    top, down, left, right = tf.unstack(tf.transpose(rel_codes))
+    top, left, down, right = tf.unstack(tf.transpose(rel_codes))
 
-    diff_x = (right - left)*0.5
-    diff_y = (top - down)*0.5
+    diff_x = (right + left)*0.5
+    diff_y = (top + down)*0.5
     #x1 = diff_x - left
     #y1 = diff_y - down
     #x2 = right + diff_x
@@ -100,8 +100,8 @@ class RotatedBoxCoder(object):
 
     #dx = xcenter_a - diff_x_std
     #dy = ycenter_a - diff_y_std
-    w = left + right
-    h = top + down
+    w = tf.abs(right) + tf.abs(left)
+    h = tf.abs(top) + tf.abs(down)
     xmin = center_x - 0.5*w
     ymin = center_y - 0.5*h
     xmax = center_x + 0.5*w
