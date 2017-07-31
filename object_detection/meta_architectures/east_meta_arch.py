@@ -220,6 +220,7 @@ class EASTMetaArch(model.DetectionModel):
       feature_maps = self._feature_extractor.extract_features(
           preprocessed_inputs)
     feature_map_shape = tf.shape(feature_maps[0])
+    image_shape = tf.shape(preprocessed_inputs)
     self._anchors = self._anchor_generator.generate(
         [(feature_map_shape[1], feature_map_shape[2])])
     (box_encodings, rotation_encodings, score_encodings
@@ -228,6 +229,7 @@ class EASTMetaArch(model.DetectionModel):
         'box_encodings': box_encodings,
 		'rotations': rotation_encodings,
         'scores': score_encodings,
+        'image_shape': image_shape,
         'feature_maps': feature_maps
     }
     return predictions_dict
@@ -372,15 +374,15 @@ class EASTMetaArch(model.DetectionModel):
         values.
     """
     with tf.name_scope(scope, 'Loss', prediction_dict.values()):
+      groundtruth_boxlists = self._format_groundtruth_data(prediction_dict['image_shape'])
       (batch_score_targets, batch_score_weights,
        batch_rbox_targets, batch_rbox_weights,
        match_list) = self._assign_targets(
-           self.groundtruth_lists(fields.BoxListFields.boxes),
+           groundtruth_boxlists,
            self.groundtruth_lists(fields.BoxListFields.rotations),
            self.groundtruth_lists(fields.BoxListFields.masks))
       if self._add_summaries:
-        self._summarize_input(
-            self.groundtruth_lists(fields.BoxListFields.boxes), match_list)
+        self._summarize_input([bl.get() for bl in groundtruth_boxlists], match_list)
       num_matches = tf.stack(
           [match.num_matched_columns() for match in match_list])
       predicted_rbox = tf.concat([prediction_dict['box_encodings'],
@@ -411,7 +413,7 @@ class EASTMetaArch(model.DetectionModel):
       }
     return loss_dict
 
-  def _assign_targets(self, groundtruth_boxes_list, groundtruth_rotations_list,
+  def _assign_targets(self, groundtruth_boxlists, groundtruth_rotations_list,
                       groundtruth_masks_list):
     """Assign groundtruth targets.
 
@@ -440,9 +442,6 @@ class EASTMetaArch(model.DetectionModel):
         with rows of the Match objects corresponding to groundtruth boxes
         and columns corresponding to anchors.
     """
-    groundtruth_boxlists = [
-        box_list.BoxList(boxes) for boxes in groundtruth_boxes_list
-    ]
 
     score_targets_list = []
     score_weights_list = []
@@ -545,6 +544,13 @@ class EASTMetaArch(model.DetectionModel):
     reg_weights = tf.cast(match.matched_column_indicator(), tf.float32)
     return reg_targets, reg_weights
 
+  def _format_groundtruth_data(self, image_shape):
+    groundtruth_boxlists = [
+        box_list_ops.to_absolute_coordinates(
+            box_list.BoxList(boxes), image_shape[1], image_shape[2])
+        for boxes in self.groundtruth_lists(fields.BoxListFields.boxes)]
+    return groundtruth_boxlists
+
   def _summarize_input(self, groundtruth_boxes_list, match_list):
     """Creates tensorflow summaries for the input boxes and anchors.
 
@@ -604,7 +610,6 @@ class EASTMetaArch(model.DetectionModel):
     variables_to_restore = (
         variables_helper.get_variables_available_in_checkpoint(
             variables_to_restore, checkpoint_path))
-    print variables_to_restore.keys()
     saver = tf.train.Saver(variables_to_restore)
 
     def restore(sess):

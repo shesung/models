@@ -122,10 +122,6 @@ class TfExampleDecoder(data_decoder.DataDecoder):
                                                     self.items_to_handlers)
     keys = decoder.list_items()
     tensors = decoder.decode(serialized_example, items=keys)
-    print keys ###
-    for i in range(len(tensors)):
-      if keys[i] in ['filename']:
-        tensors[i] = tf.Print(tensors[i], [tf.shape(tensors[i]),tensors[i]], message='%s='%keys[i]) ###
     tensor_dict = dict(zip(keys, tensors))
     is_crowd = fields.InputDataFields.groundtruth_is_crowd
     tensor_dict[is_crowd] = tf.cast(tensor_dict[is_crowd], dtype=tf.bool)

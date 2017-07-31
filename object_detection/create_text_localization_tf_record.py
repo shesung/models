@@ -86,11 +86,10 @@ def dict_to_tf_example(data,
     difficult = bool(int(obj['difficult']))
     difficult_obj.append(int(difficult))
 
-    # we use absolute coordinates in east pipeline
-    xmin.append(float(obj['bndbox']['xmin']))
-    ymin.append(float(obj['bndbox']['ymin']))
-    xmax.append(float(obj['bndbox']['xmax']))
-    ymax.append(float(obj['bndbox']['ymax']))
+    xmin.append(float(obj['bndbox']['xmin']) / width)
+    ymin.append(float(obj['bndbox']['ymin']) / height)
+    xmax.append(float(obj['bndbox']['xmax']) / width)
+    ymax.append(float(obj['bndbox']['ymax']) / height)
     rotation.append(float(obj['rotation']))
     mask = mask + obj['mask']
     classes_text.append(obj['name'].encode('utf8'))

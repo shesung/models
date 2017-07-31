@@ -78,7 +78,7 @@ def build(model_config, is_training):
   raise ValueError('Unknown meta architecture: {}'.format(meta_architecture))
 
 
-def _build_east_feature_extractor(feature_extractor_config, is_training,
+def _build_ssd_feature_extractor(feature_extractor_config, is_training,
                                  reuse_weights=None):
   """Builds a ssd_meta_arch.SSDFeatureExtractor based on config.
 

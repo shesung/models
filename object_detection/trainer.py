@@ -99,20 +99,16 @@ def _get_inputs(input_queue, num_classes):
   def extract_images_and_targets(read_data):
     image = read_data[fields.InputDataFields.image]
     location_gt = read_data[fields.InputDataFields.groundtruth_boxes]
-    location_gt = tf.Print(location_gt, [tf.shape(location_gt), location_gt], message='location_gt=') ###
 
     classes_gt = tf.cast(read_data[fields.InputDataFields.groundtruth_classes],
                          tf.int32)
     classes_gt -= label_id_offset
     classes_gt = util_ops.padded_one_hot_encoding(indices=classes_gt,
                                                   depth=num_classes, left_pad=0)
-    classes_gt = tf.Print(classes_gt, [tf.shape(classes_gt), classes_gt], message='classes_gt=') ###
 
     masks_gt = read_data.get(fields.InputDataFields.groundtruth_instance_masks)
-    masks_gt = tf.Print(masks_gt, [tf.shape(masks_gt), masks_gt], message='masks_gt=') ###
 
     rotations_gt = read_data[fields.InputDataFields.groundtruth_rotations]
-    rotations_gt = tf.Print(rotations_gt, [tf.shape(rotations_gt), rotations_gt], message='rotations_gt=') ###
 
     keypiont_gt = read_data.get(fields.InputDataFields.groundtruth_keypoints)
     return image, location_gt, classes_gt, masks_gt, keypiont_gt, rotations_gt
