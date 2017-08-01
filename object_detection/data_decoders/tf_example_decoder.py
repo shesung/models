@@ -51,6 +51,7 @@ class TfExampleDecoder(data_decoder.DataDecoder):
         'image/object/difficult': tf.VarLenFeature(tf.int64),
         # Instance masks and classes.
         'image/segmentation/object': tf.VarLenFeature(tf.int64),
+        'image/segmentation/length': tf.FixedLenFeature((), tf.int64, 1),
         'image/segmentation/object/class': tf.VarLenFeature(tf.int64)
     }
     self.items_to_handlers = {
@@ -79,7 +80,8 @@ class TfExampleDecoder(data_decoder.DataDecoder):
         # Instance masks and classes.
         fields.InputDataFields.groundtruth_instance_masks: (
             slim_example_decoder.ItemHandlerCallback(
-                ['image/segmentation/object', 'image/height', 'image/width'],
+                ['image/segmentation/object', 'image/height', 'image/width',
+                 'image/segmentation/length'],
                 self._reshape_instance_masks)),
         fields.InputDataFields.groundtruth_instance_classes: (
             slim_example_decoder.Tensor('image/segmentation/object/class')),
@@ -143,8 +145,18 @@ class TfExampleDecoder(data_decoder.DataDecoder):
     masks = keys_to_tensors['image/segmentation/object']
     if isinstance(masks, tf.SparseTensor):
       masks = tf.sparse_tensor_to_dense(masks)
+    mask_length = keys_to_tensors['image/segmentation/length']
+    masks = self._pn_decode_masks(masks, mask_length)  # decode from PN code
     height = keys_to_tensors['image/height']
     width = keys_to_tensors['image/width']
     to_shape = tf.cast(tf.stack([-1, height, width]), tf.int32)
 
     return tf.cast(tf.reshape(masks, to_shape), tf.bool)
+
+  def _pn_decode_masks(self, masks, mask_length):
+    import numpy as np
+    def pn_decode(x):
+      y = np.concatenate([np.ones([np.abs(d)], dtype=np.int32) * np.sign(d)
+                          for d in x], 0)
+      return (y + 1) / 2
+    return tf.py_func(pn_decode, [masks], tf.int32)

@@ -14,6 +14,7 @@ import hashlib
 import io
 import logging
 import os
+import time
 
 import numpy as np
 from skimage.draw import polygon
@@ -61,12 +62,10 @@ def dict_to_tf_example(data,
   """
   #img_path = os.path.join(data['folder'], image_subdirectory, data['filename'])
   full_path = os.path.join(dataset_directory, data['filename'])
-  with tf.gfile.GFile(full_path, 'rb') as fid:
-    encoded_jpg = fid.read()
-  encoded_jpg_io = io.BytesIO(encoded_jpg)
-  image = PIL.Image.open(encoded_jpg_io)
-  if image.format != 'JPEG':
-    raise ValueError('Image format not JPEG')
+  encoded_jpg_io = io.BytesIO()
+  image = data['image']
+  image.save(encoded_jpg_io, "JPEG", quality=80)
+  encoded_jpg = encoded_jpg_io.getvalue()
   key = hashlib.sha256(encoded_jpg).hexdigest()
 
   width, height = image.size
@@ -76,11 +75,11 @@ def dict_to_tf_example(data,
   xmax = []
   ymax = []
   rotation = []
-  mask = []
   classes = []
   classes_text = []
   truncated = []
   poses = []
+  masks = []
   difficult_obj = []
   for obj in data['object']:
     difficult = bool(int(obj['difficult']))
@@ -91,12 +90,17 @@ def dict_to_tf_example(data,
     xmax.append(float(obj['bndbox']['xmax']) / width)
     ymax.append(float(obj['bndbox']['ymax']) / height)
     rotation.append(float(obj['rotation']))
-    mask = mask + obj['mask']
+    masks.append(obj['mask'])
     classes_text.append(obj['name'].encode('utf8'))
     classes.append(label_map_dict[obj['name']])
     truncated.append(int(obj['truncated']))
     poses.append(obj['pose'].encode('utf8'))
 
+  mask = np.stack(masks)
+  print('mask', mask.shape) ###
+  mask = pn_encode(mask.flatten()).tolist()
+  mask_length = len(mask)
+  print(len(mask)) ###
   example = tf.train.Example(features=tf.train.Features(feature={
       'image/height': dataset_util.int64_feature(height),
       'image/width': dataset_util.int64_feature(width),
@@ -118,6 +122,7 @@ def dict_to_tf_example(data,
       'image/object/truncated': dataset_util.int64_list_feature(truncated),
       'image/object/view': dataset_util.bytes_list_feature(poses),
       'image/segmentation/object': dataset_util.int64_list_feature(mask),
+      'image/segmentation/length': dataset_util.int64_feature(mask_length),
       'image/segmentation/object/class': dataset_util.int64_list_feature(classes),
   }))
   return example
@@ -139,6 +144,16 @@ def rbox_2_polygon(x, y, w, h, rad):
     pts[:,1] = pts[:,1] + yc
     return pts.flatten().tolist()
 
+def pn_encode(x):
+    '''
+    x: 1-D numpy array of 0 or 1
+    '''
+    x = x * 2 - 1
+    x = np.concatenate([[-1 *x[0]], x, [-1 *x[-1]]])
+    pd = np.where(np.diff(x) != 0)[0]
+    d = pd[1:] - pd[:-1]
+    c = np.multiply(d, x[pd[1:]])
+    return c.astype(np.int32)
 
 def main(_):
     if FLAGS.set not in SETS:
@@ -146,18 +161,21 @@ def main(_):
 
     writer = tf.python_io.TFRecordWriter(FLAGS.output_path)
     label_map_dict = label_map_util.get_label_map_dict('object_detection/data/text_label_map.pbtxt')
-    min_size = 600
+
     data_dir = FLAGS.data_dir
-    for fn in os.listdir(data_dir)[:16]:
+    for fn in os.listdir(data_dir):
         if os.path.splitext(fn)[1] == '.gt':
             continue
 
+        t0 = time.time()
         org = PIL.Image.open(os.path.join(data_dir, fn))
         width, height = org.size
-        im_width = int(((width/32)+1)*32)
-        im_height = int(((height/32)+1)*32)
-        radio_x = im_width*1.0 / width
-        radio_y = im_height*1.0 / height
+        width = int(width)
+        height = int(height)
+        im_width = width if width % 32 == 0 else width - width%32
+        im_height = height if height % 32 == 0 else height - height%32
+        radio_x = float(im_width) / width
+        radio_y = float(im_height) / height
         im = org.resize((im_width, im_height))
         gt_fn = os.path.splitext(fn)[0] + '.gt'
         obj_list = []
@@ -167,17 +185,35 @@ def main(_):
                 items = line.strip().split()
                 index = int(items[0])
                 difficult = int(items[1])
-                x = int(int(items[2])*radio_x)
-                y = int(int(items[3])*radio_y)
-                w = int(int(items[4])*radio_x)
-                h = int(int(items[5])*radio_y)
+                x = float(items[2])*radio_x
+                y = float(items[3])*radio_y
+                w = float(items[4])*radio_x
+                h = float(items[5])*radio_y
                 rad = float(items[6])
-                p0 = rbox_2_polygon(x, y, w, h, rad)
-                e1 = [p0[0]+0.25*p0[6], p0[1]+0.25*p0[7]]
-                e2 = [p0[0]+0.75*p0[6], p0[1]+0.75*p0[7]]
-                e3 = [p0[2]+0.25*p0[4], p0[3]+0.25*p0[5]]
-                e4 = [p0[2]+0.75*p0[4], p0[3]+0.75*p0[5]]
-                p = [e1[0],e1[1],e2[0],e2[1],e3[0],e3[1],e4[0],e4[1]]
+
+                x1, y1, x2, y2, x3, y3, x4, y4 = rbox_2_polygon(x, y, w, h, rad)
+                t = 0.25
+
+                x1_ = x1 + t * (x2 - x1)
+                y1_ = y1 + t * (y2 - y1)
+                x2_ = x2 + t * (x1 - x2)
+                y2_ = y2 + t * (y1 - y2)
+                x3_ = x3 + t * (x4 - x3)
+                y3_ = y3 + t * (y4 - y4)
+                x4_ = x4 + t * (x3 - x4)
+                y4_ = y4 + t * (y3 - y4)
+                x1, y1, x2, y2, x3, y3, x4, y4 = x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_
+
+                x1_ = x1 + t * (x4 - x1)
+                y1_ = y1 + t * (y4 - y1)
+                x4_ = x4 + t * (x1 - x4)
+                y4_ = y4 + t * (y1 - y4)
+                x2_ = x2 + t * (x3 - x2)
+                y2_ = y2 + t * (y3 - y2)
+                x3_ = x3 + t * (x2 - x3)
+                y3_ = y3 + t * (y2 - y3)
+
+                p = [x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_]
                 rr, cc = polygon(p[1::2], p[0::2])
                 rr = np.clip(rr, 0, im_height-1)
                 cc = np.clip(cc, 0, im_width-1)
@@ -189,25 +225,29 @@ def main(_):
                         'xmin':x,
                         'ymin':y,
                         'xmax':x+w,
-                        'ymax':y+w,
+                        'ymax':y+h,
                     },
                     'rotation':rad,
-                    'mask':mask.flatten().tolist(),
+                    'mask': mask,
                     'truncated': 0,
                     'pose': '',
                     'difficult': 1,
                 }
                 obj_list.append(obj)
 
+        print('parse:', time.time() -t0)
         data = {
             'filename':fn,
             'object': obj_list,
+            'image': im
         }
 
-        print(os.path.join(data_dir, fn), im_width, im_height, len(data['object']))  ###
         if len(data['object']) >0:
+            t0 = time.time()
             tf_example = dict_to_tf_example(data, data_dir, label_map_dict)
             writer.write(tf_example.SerializeToString())
+            print('write', time.time() - t0)
+        print(os.path.join(data_dir, fn), im_width, im_height, len(data['object']))  ###
 
     writer.close()
 

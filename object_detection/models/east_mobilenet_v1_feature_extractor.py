@@ -79,7 +79,6 @@ class EASTMobileNetV1FeatureExtractor(east_meta_arch.EASTFeatureExtractor):
       with slim.arg_scope(self._conv_hyperparams):
         with tf.variable_scope('MobilenetV1',
                                reuse=self._reuse_weights) as scope:
-          preprocessed_inputs = tf.Print(preprocessed_inputs, [tf.shape(preprocessed_inputs)], message='preprocessed_inputs=')
           _, image_features = mobilenet_v1.mobilenet_v1_base(
               preprocessed_inputs,
               final_endpoint='Conv2d_13_pointwise',
@@ -97,15 +96,10 @@ class EASTMobileNetV1FeatureExtractor(east_meta_arch.EASTFeatureExtractor):
     east_conv_2 = feature_maps['Conv2d_5_pointwise']
     east_conv_3 = feature_maps['Conv2d_9_pointwise']
     east_conv_4 = feature_maps['Conv2d_13_pointwise']
-    east_conv_1 = tf.Print(east_conv_1, [tf.shape(east_conv_1)], message='east_conv_1=')
-    east_conv_2 = tf.Print(east_conv_2, [tf.shape(east_conv_2)], message='east_conv_2=')
-    east_conv_3 = tf.Print(east_conv_3, [tf.shape(east_conv_3)], message='east_conv_3=')
-    east_conv_4 = tf.Print(east_conv_4, [tf.shape(east_conv_4)], message='east_conv_4=')
 
     with tf.variable_scope("MergeBranch"):
       east_deconv4 = slim.conv2d_transpose(east_conv_4, 512, [4, 4], 2,
                                            padding='SAME', scope='east_deconv4')
-      east_deconv4 = tf.Print(east_deconv4, [tf.shape(east_deconv4)], message='east_deconv4=')
       east_conv4_concat = tf.concat([east_conv_3, east_deconv4], axis=3)
       east_conv4_1x1 = slim.conv2d(east_conv4_concat, 128, [1,1],
                                    stride=1,
@@ -118,7 +112,6 @@ class EASTMobileNetV1FeatureExtractor(east_meta_arch.EASTFeatureExtractor):
 
       east_deconv3 = slim.conv2d_transpose(east_conv4_3x3, 128, [4, 4], 2,
                                       padding='SAME', scope='east_deconv3')
-      east_deconv3 = tf.Print(east_deconv3, [tf.shape(east_deconv3)], message='east_deconv3=')
       east_conv3_concat = tf.concat([east_conv_2, east_deconv3], axis=3)
       east_conv3_1x1 = slim.conv2d(east_conv3_concat, 64, [1,1],
                                    stride=1,
@@ -131,7 +124,6 @@ class EASTMobileNetV1FeatureExtractor(east_meta_arch.EASTFeatureExtractor):
 
       east_deconv2 = slim.conv2d_transpose(east_conv3_3x3, 64, [4, 4], 2, \
                                       padding='SAME', scope='east_deconv2')
-      east_deconv2 = tf.Print(east_deconv2, [tf.shape(east_deconv2)], message='east_deconv2=')
       east_conv2_concat = tf.concat([east_conv_1, east_deconv2], axis=3)
       east_conv2_1x1 = slim.conv2d(east_conv2_concat, 32, [1,1],
                                    stride=1,
@@ -141,8 +133,6 @@ class EASTMobileNetV1FeatureExtractor(east_meta_arch.EASTFeatureExtractor):
                                    stride=1,
                                    normalizer_fn=slim.batch_norm,
                                    scope='east_conv2_3x3')
-      east_conv2_3x3 = tf.Print(east_conv2_3x3, [east_conv2_3x3, tf.shape(east_conv2_3x3)],
-              message='east_conv2_3x3=')
       east_conv1_3x3 = slim.conv2d(east_conv2_3x3, 32, [3,3],
                                    stride=1,
                                    normalizer_fn=slim.batch_norm,
