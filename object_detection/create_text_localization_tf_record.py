@@ -146,14 +146,19 @@ def main(_):
 
     writer = tf.python_io.TFRecordWriter(FLAGS.output_path)
     label_map_dict = label_map_util.get_label_map_dict('object_detection/data/text_label_map.pbtxt')
-
+    min_size = 600
     data_dir = FLAGS.data_dir
     for fn in os.listdir(data_dir)[:16]:
         if os.path.splitext(fn)[1] == '.gt':
             continue
 
-        im = PIL.Image.open(os.path.join(data_dir, fn))
-        im_width, im_height = im.size
+        org = PIL.Image.open(os.path.join(data_dir, fn))
+        width, height = org.size
+        im_width = int(((width/32)+1)*32)
+        im_height = int(((height/32)+1)*32)
+        radio_x = im_width*1.0 / width
+        radio_y = im_height*1.0 / height
+        im = org.resize((im_width, im_height))
         gt_fn = os.path.splitext(fn)[0] + '.gt'
         obj_list = []
         with open(os.path.join(data_dir, gt_fn)) as f_gt:
@@ -162,12 +167,17 @@ def main(_):
                 items = line.strip().split()
                 index = int(items[0])
                 difficult = int(items[1])
-                x = int(items[2])
-                y = int(items[3])
-                w = int(items[4])
-                h = int(items[5])
+                x = int(int(items[2])*radio_x)
+                y = int(int(items[3])*radio_y)
+                w = int(int(items[4])*radio_x)
+                h = int(int(items[5])*radio_y)
                 rad = float(items[6])
-                p = rbox_2_polygon(x, y, w, h, rad)
+                p0 = rbox_2_polygon(x, y, w, h, rad)
+                e1 = [p0[0]+0.25*p0[6], p0[1]+0.25*p0[7]]
+                e2 = [p0[0]+0.75*p0[6], p0[1]+0.75*p0[7]]
+                e3 = [p0[2]+0.25*p0[4], p0[3]+0.25*p0[5]]
+                e4 = [p0[2]+0.75*p0[4], p0[3]+0.75*p0[5]]
+                p = [e1[0],e1[1],e2[0],e2[1],e3[0],e3[1],e4[0],e4[1]]
                 rr, cc = polygon(p[1::2], p[0::2])
                 rr = np.clip(rr, 0, im_height-1)
                 cc = np.clip(cc, 0, im_width-1)

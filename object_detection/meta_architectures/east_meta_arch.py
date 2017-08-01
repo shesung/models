@@ -188,10 +188,10 @@ class EASTMetaArch(model.DetectionModel):
     with tf.name_scope('Preprocessor'):
       # TODO: revisit whether to always use batch size as  the number of
       # parallel iterations vs allow for dynamic batching.
-      resized_inputs = tf.map_fn(self._image_resizer_fn,
-                                 elems=inputs,
-                                 dtype=tf.float32)
-      return self._feature_extractor.preprocess(resized_inputs)
+      #resized_inputs = tf.map_fn(self._image_resizer_fn,
+      #                           elems=inputs,
+      #                           dtype=tf.float32)
+      return self._feature_extractor.preprocess(inputs)
 
   def predict(self, preprocessed_inputs):
     """Predicts unpostprocessed tensors from input tensor.
