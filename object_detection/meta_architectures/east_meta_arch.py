@@ -219,6 +219,9 @@ class EASTMetaArch(model.DetectionModel):
                            [preprocessed_inputs]):
       feature_maps = self._feature_extractor.extract_features(
           preprocessed_inputs)
+    if self._add_summaries:
+      tf.summary.image("Loss/image", preprocessed_inputs)
+
     feature_map_shape = tf.shape(feature_maps[0])
     image_shape = tf.shape(preprocessed_inputs)
     self._anchors = self._anchor_generator.generate(
@@ -273,6 +276,10 @@ class EASTMetaArch(model.DetectionModel):
       box_encodings = box_predictions[bpredictor.BOX_ENCODINGS]
       rotation_encodings = box_predictions[bpredictor.ANGLE_ENCODINGS]
       score_encodings = box_predictions[bpredictor.SCORE_PREDICTIONS]
+      if self._add_summaries:
+        tf.summary.histogram("Pred/box", box_encodings)
+        tf.summary.histogram("Pred/rotations", rotation_encodings)
+        tf.summary.histogram("Pred/score", score_encodings)
 
       box_encodings_shape = box_encodings.get_shape().as_list()
       if len(box_encodings_shape) != 4 or box_encodings_shape[2] != 1:
@@ -382,7 +389,9 @@ class EASTMetaArch(model.DetectionModel):
            self.groundtruth_lists(fields.BoxListFields.rotations),
            self.groundtruth_lists(fields.BoxListFields.masks))
       if self._add_summaries:
-        self._summarize_input([bl.get() for bl in groundtruth_boxlists], match_list)
+        self._summarize_input([bl.get() for bl in groundtruth_boxlists],
+                              self.groundtruth_lists(fields.BoxListFields.masks),
+                              match_list)
       num_matches = tf.stack(
           [match.num_matched_columns() for match in match_list])
       predicted_rbox = tf.concat([prediction_dict['box_encodings'],
@@ -474,8 +483,8 @@ class EASTMetaArch(model.DetectionModel):
 
     (ycenter, xcenter, height, width) = anchors.get_center_coordinates_and_sizes()
     # Note: anchors use absolute coordinates, so as the groundtruth_boxes
-    yindices = tf.cast(tf.floor(ycenter * 0.25), tf.int32)
-    xindices = tf.cast(tf.floor(xcenter * 0.25), tf.int32)
+    yindices = tf.cast(tf.floor(ycenter), tf.int32)
+    xindices = tf.cast(tf.floor(xcenter), tf.int32)
     coordinates = tf.stack([yindices, xindices], -1)
     groundtruth_masks = tf.cast(groundtruth_masks, tf.int32)
     gt_masks_max = tf.reduce_max(groundtruth_masks, 0)
@@ -547,11 +556,11 @@ class EASTMetaArch(model.DetectionModel):
   def _format_groundtruth_data(self, image_shape):
     groundtruth_boxlists = [
         box_list_ops.to_absolute_coordinates(
-            box_list.BoxList(boxes), image_shape[1], image_shape[2])
+            box_list.BoxList(boxes), image_shape[1], image_shape[2], check_range=False)
         for boxes in self.groundtruth_lists(fields.BoxListFields.boxes)]
     return groundtruth_boxlists
 
-  def _summarize_input(self, groundtruth_boxes_list, match_list):
+  def _summarize_input(self, groundtruth_boxes_list, groundtruth_masks_list, match_list):
     """Creates tensorflow summaries for the input boxes and anchors.
 
     This function creates four summaries corresponding to the average
@@ -583,6 +592,13 @@ class EASTMetaArch(model.DetectionModel):
                       tf.reduce_mean(tf.to_float(neg_anchors_per_image)))
     tf.summary.scalar('Input/AvgNumIgnoredAnchorsPerImage',
                       tf.reduce_mean(tf.to_float(ignored_anchors_per_image)))
+
+    gt_masks = groundtruth_masks_list[0]
+    gt_masks = tf.cast(gt_masks, tf.float32)
+    gt_masks_max = tf.reduce_max(gt_masks, 0)
+    mask = tf.expand_dims(gt_masks_max, 0)
+    mask = tf.expand_dims(mask, -1)
+    tf.summary.image("mask", mask)
 
 
   def restore_fn(self, checkpoint_path, from_detection_checkpoint=True):
