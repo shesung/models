@@ -33,6 +33,7 @@ flags.DEFINE_string('data_dir', '/world/data-c7/censhusheng/data/MSRA-TD500/trai
 flags.DEFINE_string('output_path', './text_loc.record', 'Path to output TFRecord')
 flags.DEFINE_string('set', 'train', 'Convert training set, validation set or '
                     'merged set.')
+flags.DEFINE_integer('min_size', 800, 'Size of resized shorter edge')
 
 FLAGS = flags.FLAGS
 SETS = ['train', 'val', 'trainval', 'test']
@@ -97,10 +98,9 @@ def dict_to_tf_example(data,
     poses.append(obj['pose'].encode('utf8'))
 
   mask = np.stack(masks)
-  print('mask', mask.shape) ###
-  mask = pn_encode(mask.flatten()).tolist()
-  mask_length = len(mask)
-  print(len(mask)) ###
+  encoded_mask = pn_encode(mask.flatten()).tolist()
+  mask_length = len(encoded_mask)
+  print('mask:', mask.shape, '->', len(encoded_mask)) ###
   example = tf.train.Example(features=tf.train.Features(feature={
       'image/height': dataset_util.int64_feature(height),
       'image/width': dataset_util.int64_feature(width),
@@ -121,7 +121,7 @@ def dict_to_tf_example(data,
       'image/object/difficult': dataset_util.int64_list_feature(difficult_obj),
       'image/object/truncated': dataset_util.int64_list_feature(truncated),
       'image/object/view': dataset_util.bytes_list_feature(poses),
-      'image/segmentation/object': dataset_util.int64_list_feature(mask),
+      'image/segmentation/object': dataset_util.int64_list_feature(encoded_mask),
       'image/segmentation/length': dataset_util.int64_feature(mask_length),
       'image/segmentation/object/class': dataset_util.int64_list_feature(classes),
   }))
@@ -155,6 +155,20 @@ def pn_encode(x):
     c = np.multiply(d, x[pd[1:]])
     return c.astype(np.int32)
 
+def resize(image, min_size):
+    width, height = image.size
+    if height < width:
+        new_height = int(800)
+        new_width = int(width * 800 / height)
+        if new_width % 32 != 0:
+            new_width -= new_width%32
+    else:
+        new_width = int(800)
+        new_height = int(height * 800 / width)
+        if new_height % 32 != 0:
+            new_height -= new_height%32
+    return image.resize((new_width, new_height))
+
 def main(_):
     if FLAGS.set not in SETS:
         raise ValueError('set must be in : {}'.format(SETS))
@@ -168,15 +182,15 @@ def main(_):
             continue
 
         t0 = time.time()
-        org = PIL.Image.open(os.path.join(data_dir, fn))
-        width, height = org.size
-        width = int(width)
-        height = int(height)
-        im_width = width if width % 32 == 0 else width - width%32
-        im_height = height if height % 32 == 0 else height - height%32
-        radio_x = float(im_width) / width
-        radio_y = float(im_height) / height
-        im = org.resize((im_width, im_height))
+        im = PIL.Image.open(os.path.join(data_dir, fn))
+
+        # resize
+        width, height = im.size
+        im = resize(im, FLAGS.min_size)
+        new_width, new_height = im.size
+        radio_x = float(new_width) / width
+        radio_y = float(new_height) / height
+
         gt_fn = os.path.splitext(fn)[0] + '.gt'
         obj_list = []
         with open(os.path.join(data_dir, gt_fn)) as f_gt:
@@ -215,9 +229,9 @@ def main(_):
 
                 p = [x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_]
                 rr, cc = polygon(p[1::2], p[0::2])
-                rr = np.clip(rr, 0, im_height-1)
-                cc = np.clip(cc, 0, im_width-1)
-                mask = np.zeros([im_height, im_width], dtype=np.int32)
+                rr = np.clip(rr, 0, new_height-1)
+                cc = np.clip(cc, 0, new_width-1)
+                mask = np.zeros([new_height, new_width], dtype=np.int32)
                 mask[rr,cc] = 1
                 obj = {
                     'name':'text',
@@ -235,7 +249,7 @@ def main(_):
                 }
                 obj_list.append(obj)
 
-        print('parse:', time.time() -t0)
+        print('parse:', time.time() -t0) ###
         data = {
             'filename':fn,
             'object': obj_list,
@@ -247,7 +261,8 @@ def main(_):
             tf_example = dict_to_tf_example(data, data_dir, label_map_dict)
             writer.write(tf_example.SerializeToString())
             print('write', time.time() - t0)
-        print(os.path.join(data_dir, fn), im_width, im_height, len(data['object']))  ###
+        print(os.path.join(data_dir, fn), (new_width, new_height), len(data['object']))  ###
+        print('------------') ###
 
     writer.close()
 

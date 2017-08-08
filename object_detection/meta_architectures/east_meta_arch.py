@@ -344,6 +344,7 @@ class EASTMetaArch(model.DetectionModel):
       box_encodings = prediction_dict['box_encodings']
       score_predictions = prediction_dict['scores']
       batched_rotations = prediction_dict['rotations']
+      batched_rotations = tf.squeeze(batched_rotations, axis=2)
       detection_boxes = tf.stack([
           self._box_coder.decode(boxes, rotations, self.anchors).get()
           for boxes,rotations in zip(tf.unstack(box_encodings),
