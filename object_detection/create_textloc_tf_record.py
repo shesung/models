@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-r"""Convert raw PASCAL dataset to TFRecord for object_detection.
+r"""Convert text localization datasets to TFRecord.
 
 Example usage:
     python create_text_localization_tf_record.py \
-        --output_path=/home/user/pascal.record
+        --output_path=/path/to/textloc.record
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -15,6 +15,7 @@ import io
 import logging
 import os
 import time
+import math
 
 import numpy as np
 from skimage.draw import polygon
@@ -29,19 +30,103 @@ from object_detection.utils import label_map_util
 
 flags = tf.app.flags
 
-flags.DEFINE_string('data_dir', '/world/data-c7/censhusheng/data/MSRA-TD500/train', 'Root directory to images')
+flags.DEFINE_string('set', 'MSRA-TD500_train', 'dataset to pack, sperated by comma')
 flags.DEFINE_string('output_path', './text_loc.record', 'Path to output TFRecord')
-flags.DEFINE_string('set', 'train', 'Convert training set, validation set or '
-                    'merged set.')
-flags.DEFINE_integer('min_size', 800, 'Size of resized shorter edge')
+flags.DEFINE_integer('min_size', 640, 'Size of resized shorter edge')
 
 FLAGS = flags.FLAGS
-SETS = ['train', 'val', 'trainval', 'test']
 
 
-def dict_to_tf_example(data,
-                       dataset_directory,
-                       label_map_dict):
+SETS = ['MSRA-TD500_train', 'MSRA-TD500_test', 
+        'ICDAR2015_train', 
+        'ICDAR2013_train', 'ICDAR2013_test']
+
+def read_multiple_dataset(data_str):
+    anno = dict()
+    for dataset in data_str.strip().split(','):
+        if dataset not in SETS:
+            raise ValueError('set must be in : {}'.format(SETS))
+        anno.update(read_anno(dataset))
+    return anno
+
+
+def read_anno(dataset):
+    if dataset == 'MSRA-TD500_train':
+        return read_msra('/world/data-c7/censhusheng/data/MSRA-TD500/train')
+    elif dataset == 'MSRA-TD500_test':
+        return read_msra('/world/data-c7/censhusheng/data/MSRA-TD500/test')
+    elif dataset == 'ICDAR2015_train':
+        return read_icdar_2015('/world/data-c7/censhusheng/data/icdar2015-Incidental_Scene_Text/train_images',
+                               '/world/data-c7/censhusheng/data/icdar2015-Incidental_Scene_Text/train_gt')
+    elif dataset == 'ICDAR2013_train':
+        return read_icdar_2013('/world/data-c7/censhusheng/data/icdar2013-Focused_Scene_Text/train_images',
+                               '/world/data-c7/censhusheng/data/icdar2013-Focused_Scene_Text/train_gt')
+    elif dataset == 'ICDAR2013_test':
+        return read_icdar_2013('/world/data-c7/censhusheng/data/icdar2013-Focused_Scene_Text/test_images',
+                               '/world/data-c7/censhusheng/data/icdar2013-Focused_Scene_Text/test_gt')
+    else:
+        return dict()
+    
+def read_icdar_2015(image_dir, gt_dir):
+    anno_dict = dict()
+    for fn in os.listdir(image_dir):
+        gt_fn = 'gt_' + os.path.splitext(fn)[0] + '.txt'
+        obj_list = []
+        with open(os.path.join(gt_dir, gt_fn)) as f_gt:
+            for line in f_gt.readlines():
+                line = line.decode("utf-8-sig").encode("utf-8")
+                items = line.strip().split(',')
+                poly = [int(x) for x in items[:8]]
+                rbox = polygon_2_rbox(poly)
+                obj_list.append((rbox, poly))
+        anno_dict[os.path.join(image_dir, fn)] = obj_list
+    return anno_dict
+    
+def read_icdar_2013(image_dir, gt_dir):
+    anno_dict = dict()
+    for fn in os.listdir(image_dir):
+        gt_fn = 'gt_' + os.path.splitext(fn)[0] + '.txt'
+        obj_list = []
+        with open(os.path.join(gt_dir, gt_fn)) as f_gt:
+            for line in f_gt.readlines():
+                line = line.decode("utf-8-sig").encode("utf-8")
+                items = line.strip().split(',')
+                if len(items) < 5:
+                    items = line.strip().split(' ')
+                xmin, ymin, xmax, ymax = [int(x) for x in items[:4]]
+                xc = (xmin+xmax)/2
+                yc = (ymin+ymax)/2
+                w = xmax - xmin
+                h = ymax - ymin
+                rbox = [xc, yc, w, h, 0]
+                poly = rbox_2_polygon(*rbox)
+                obj_list.append((rbox, poly))
+        anno_dict[os.path.join(image_dir, fn)] = obj_list
+    return anno_dict
+
+
+def read_msra(data_dir):
+    anno_dict = dict()
+    for fn in os.listdir(data_dir):
+        if os.path.splitext(fn)[1] == '.gt':
+            continue
+
+        gt_fn = os.path.splitext(fn)[0] + '.gt'
+        obj_list = []
+        with open(os.path.join(data_dir, gt_fn)) as f_gt:
+            for line in f_gt.readlines():
+                items = line.strip().split()
+                index = int(items[0])
+                difficult = int(items[1])
+                x, y, w, h, rad = [float(x) for x in items[2:7]]
+                rbox = [x+w/2, y+w/2, w, h, rad]
+                poly = rbox_2_polygon(*rbox)
+                obj_list.append((rbox, poly))
+        anno_dict[os.path.join(data_dir, fn)] = obj_list
+    return anno_dict
+
+
+def dict_to_tf_example(data, label_map_dict):
   """Convert XML derived dict to tf.Example proto.
 
   Notice that this function normalizes the bounding box coordinates provided
@@ -61,8 +146,7 @@ def dict_to_tf_example(data,
   Raises:
     ValueError: if the image pointed to by data['filename'] is not a valid JPEG
   """
-  #img_path = os.path.join(data['folder'], image_subdirectory, data['filename'])
-  full_path = os.path.join(dataset_directory, data['filename'])
+
   encoded_jpg_io = io.BytesIO()
   image = data['image']
   image.save(encoded_jpg_io, "JPEG", quality=80)
@@ -100,7 +184,7 @@ def dict_to_tf_example(data,
   mask = np.stack(masks)
   encoded_mask = pn_encode(mask.flatten()).tolist()
   mask_length = len(encoded_mask)
-  print('mask:', mask.shape, '->', len(encoded_mask)) ###
+  print('mask encode:', mask.shape, '->', len(encoded_mask)) ###
   example = tf.train.Example(features=tf.train.Features(feature={
       'image/height': dataset_util.int64_feature(height),
       'image/width': dataset_util.int64_feature(width),
@@ -128,12 +212,14 @@ def dict_to_tf_example(data,
   return example
 
 
-def rbox_2_polygon(x, y, w, h, rad):
-    w2 = w*0.5
-    h2 = h*0.5
-    xc = x + w2
-    yc = y + h2
-    m_rot = np.array([[np.cos(rad), -np.sin(rad)],
+
+#####################################
+########### geo func ###############
+#####################################
+def rbox_2_polygon(xc, yc, w, h, rad):
+    w2 = w/2
+    h2 = h/2
+    m_rot = np.array([[np.cos(rad), -np.sin(rad)], 
                       [np.sin(rad), np.cos(rad)]], dtype=np.float32)
     pts_ = np.array([[-w2,-h2],
                      [w2,-h2],
@@ -143,6 +229,60 @@ def rbox_2_polygon(x, y, w, h, rad):
     pts[:,0] = pts[:,0] + xc
     pts[:,1] = pts[:,1] + yc
     return pts.flatten().tolist()
+
+
+def polygon_2_rbox(poly):
+    x1, y1, x2, y2, x3, y3, x4, y4 = poly
+    theta = math.atan2(y2-y1, x2-x1)
+    pts = np.array([[x1, y1], [x2, y2], [x3, y3], [x4, y4]], dtype=np.float32)
+    pts[:, 0] = pts[:, 0] - x1
+    pts[:, 1] = pts[:, 1] - y1
+    m_rot = np.array([[np.cos(theta), np.sin(theta)],
+                      [-np.sin(theta), np.cos(theta)]], dtype=np.float32)
+    pts_ = np.dot(m_rot, pts.T)
+    w = np.amax(pts_[0,:]) - np.amin(pts_[0,:])
+    h = np.amax(pts_[1,:]) - np.amin(pts_[1,:])
+    xc_ = (np.amax(pts_[0,:]) + np.amin(pts_[0,:]))/2
+    yc_ = (np.amax(pts_[1,:]) + np.amin(pts_[1,:]))/2
+    xc = x1 + xc_ * np.cos(theta) - yc_ * np.sin(theta)
+    yc = y1 + xc_ * np.sin(theta) + yc_ * np.cos(theta)
+    return xc, yc, w, h, theta
+
+
+def shrink_quadrangle(poly, t=0.3):
+    x1, y1, x2, y2, x3, y3, x4, y4 = poly
+    
+    d1 = max(2, math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)))
+    d2 = max(2, math.sqrt((x3 - x2) * (x3 - x2) + (y3 - y2) * (y3 - y2)))
+    d3 = max(2, math.sqrt((x4 - x3) * (x4 - x3) + (y4 - y3) * (y4 - y3)))
+    d4 = max(2, math.sqrt((x1 - x4) * (x1 - x4) + (y1 - y4) * (y1 - y4)))
+    min_d = min([d1, d2, d3, d4])
+
+    x1_ = x1 + t * (x2 - x1) * min_d / d1
+    y1_ = y1 + t * (y2 - y1) * min_d / d1
+    x2_ = x2 + t * (x1 - x2) * min_d / d1
+    y2_ = y2 + t * (y1 - y2) * min_d / d1
+    x3_ = x3 + t * (x4 - x3) * min_d / d3
+    y3_ = y3 + t * (y4 - y4) * min_d / d3
+    x4_ = x4 + t * (x3 - x4) * min_d / d3
+    y4_ = y4 + t * (y3 - y4) * min_d / d3
+    x1, y1, x2, y2, x3, y3, x4, y4 = x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_
+
+    x1_ = x1 + t * (x4 - x1) * min_d / d4
+    y1_ = y1 + t * (y4 - y1) * min_d / d4
+    x4_ = x4 + t * (x1 - x4) * min_d / d4
+    y4_ = y4 + t * (y1 - y4) * min_d / d4
+    x2_ = x2 + t * (x3 - x2) * min_d / d2
+    y2_ = y2 + t * (y3 - y2) * min_d / d2
+    x3_ = x3 + t * (x2 - x3) * min_d / d2
+    y3_ = y3 + t * (y2 - y3) * min_d / d2
+
+    return [x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_]
+
+
+#####################################
+########### util func ###############
+#####################################
 
 def pn_encode(x):
     '''
@@ -158,113 +298,94 @@ def pn_encode(x):
 def resize(image, min_size):
     width, height = image.size
     if height < width:
-        new_height = int(800)
-        new_width = int(width * 800 / height)
+        new_height = int(min_size)
+        new_width = int(width * min_size / height)
         if new_width % 32 != 0:
             new_width -= new_width%32
     else:
-        new_width = int(800)
-        new_height = int(height * 800 / width)
+        new_width = int(min_size)
+        new_height = int(height * min_size / width)
         if new_height % 32 != 0:
             new_height -= new_height%32
+    print('resize:', (width, height), '->', (new_width, new_height)) ###
     return image.resize((new_width, new_height))
 
+
+
 def main(_):
-    if FLAGS.set not in SETS:
-        raise ValueError('set must be in : {}'.format(SETS))
 
     writer = tf.python_io.TFRecordWriter(FLAGS.output_path)
     label_map_dict = label_map_util.get_label_map_dict('object_detection/data/text_label_map.pbtxt')
 
-    data_dir = FLAGS.data_dir
-    for fn in os.listdir(data_dir):
-        if os.path.splitext(fn)[1] == '.gt':
-            continue
 
+    anno_dict = read_multiple_dataset(FLAGS.set)
+    cnt = 0
+    for image_fn in anno_dict:
+        print(image_fn) ###
+        
         t0 = time.time()
-        im = PIL.Image.open(os.path.join(data_dir, fn))
-
+        im = PIL.Image.open(image_fn)
+        
         # resize
         width, height = im.size
         im = resize(im, FLAGS.min_size)
         new_width, new_height = im.size
-        radio_x = float(new_width) / width
-        radio_y = float(new_height) / height
-
-        gt_fn = os.path.splitext(fn)[0] + '.gt'
+        ratio_x = float(new_width) / width
+        ratio_y = float(new_height) / height
+        
         obj_list = []
-        with open(os.path.join(data_dir, gt_fn)) as f_gt:
-            for line in f_gt.readlines():
-                #line = line.decode("utf-8").encode("utf-8")
-                items = line.strip().split()
-                index = int(items[0])
-                difficult = int(items[1])
-                x = float(items[2])*radio_x
-                y = float(items[3])*radio_y
-                w = float(items[4])*radio_x
-                h = float(items[5])*radio_y
-                rad = float(items[6])
-
-                x1, y1, x2, y2, x3, y3, x4, y4 = rbox_2_polygon(x, y, w, h, rad)
-                t = 0.25
-
-                x1_ = x1 + t * (x2 - x1)
-                y1_ = y1 + t * (y2 - y1)
-                x2_ = x2 + t * (x1 - x2)
-                y2_ = y2 + t * (y1 - y2)
-                x3_ = x3 + t * (x4 - x3)
-                y3_ = y3 + t * (y4 - y4)
-                x4_ = x4 + t * (x3 - x4)
-                y4_ = y4 + t * (y3 - y4)
-                x1, y1, x2, y2, x3, y3, x4, y4 = x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_
-
-                x1_ = x1 + t * (x4 - x1)
-                y1_ = y1 + t * (y4 - y1)
-                x4_ = x4 + t * (x1 - x4)
-                y4_ = y4 + t * (y1 - y4)
-                x2_ = x2 + t * (x3 - x2)
-                y2_ = y2 + t * (y3 - y2)
-                x3_ = x3 + t * (x2 - x3)
-                y3_ = y3 + t * (y2 - y3)
-
-                p = [x1_, y1_, x2_, y2_, x3_, y3_, x4_, y4_]
-                rr, cc = polygon(p[1::2], p[0::2])
-                rr = np.clip(rr, 0, new_height-1)
-                cc = np.clip(cc, 0, new_width-1)
-                mask = np.zeros([new_height, new_width], dtype=np.int32)
-                mask[rr,cc] = 1
-                obj = {
-                    'name':'text',
-                    'bndbox':{
-                        'xmin':x,
-                        'ymin':y,
-                        'xmax':x+w,
-                        'ymax':y+h,
-                    },
-                    'rotation':rad,
-                    'mask': mask,
-                    'truncated': 0,
-                    'pose': '',
-                    'difficult': 1,
-                }
-                obj_list.append(obj)
-
-        print('parse:', time.time() -t0) ###
+        for rbox, poly in anno_dict[image_fn]:
+            p = shrink_quadrangle(poly, 0.3)
+            xc, yc, w, h, rad = rbox
+            # scale rbox
+            xc *= ratio_x
+            yc *= ratio_y
+            w  *= ratio_x
+            h  *= ratio_y
+            # scale poly
+            r = np.array(p[1::2]) * ratio_y
+            c = np.array(p[0::2]) * ratio_x
+            rr, cc = polygon(r, c)
+            rr = np.clip(rr, 0, new_height-1)
+            cc = np.clip(cc, 0, new_width-1)
+            
+            mask = np.zeros([new_height, new_width], dtype=np.int32)
+            mask[rr,cc] = 1
+            
+            obj = {
+                'name':'text',
+                'bndbox':{
+                    'xmin':int(xc - w/2),
+                    'ymin':int(yc - h/2),
+                    'xmax':int(xc + w/2),
+                    'ymax':int(yc + h/2),
+                },
+                'rotation':rad,
+                'mask': mask,
+                'truncated': 0,
+                'pose': '',
+                'difficult': 0,
+            }
+            obj_list.append(obj)
+            
         data = {
-            'filename':fn,
+            'filename':image_fn,
             'object': obj_list,
             'image': im
         }
 
         if len(data['object']) >0:
-            t0 = time.time()
-            tf_example = dict_to_tf_example(data, data_dir, label_map_dict)
+            tf_example = dict_to_tf_example(data, label_map_dict)
             writer.write(tf_example.SerializeToString())
-            print('write', time.time() - t0)
-        print(os.path.join(data_dir, fn), (new_width, new_height), len(data['object']))  ###
-        print('------------') ###
+            cnt += 1
+
+        print('boxes:%d'%(len(data['object'])), 
+              'time:%f'%(time.time() - t0),
+              '\n----------------------------')  ###
 
     writer.close()
+    print('total image:', cnt) ###
+
 
 if __name__ == '__main__':
-  tf.app.run()
+    tf.app.run()
