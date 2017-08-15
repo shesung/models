@@ -277,7 +277,12 @@ class EASTMetaArch(model.DetectionModel):
       rotation_encodings = box_predictions[bpredictor.ANGLE_ENCODINGS]
       score_encodings = box_predictions[bpredictor.SCORE_PREDICTIONS]
       if self._add_summaries:
-        tf.summary.histogram("Pred/box", box_encodings)
+        tf.summary.histogram("Pred/top", box_encodings[:,:,:,0])
+        tf.summary.histogram("Pred/left", box_encodings[:,:,:,1])
+        tf.summary.histogram("Pred/down", box_encodings[:,:,:,2])
+        tf.summary.histogram("Pred/right", box_encodings[:,:,:,3])
+        tf.summary.histogram("Pred/left_right", box_encodings[:,:,:,1] + box_encodings[:,:,:,3])
+        tf.summary.histogram("Pred/top_down", box_encodings[:,:,:,0] + box_encodings[:,:,:,2])
         tf.summary.histogram("Pred/rotations", rotation_encodings)
         tf.summary.histogram("Pred/score", score_encodings)
 
@@ -304,6 +309,47 @@ class EASTMetaArch(model.DetectionModel):
       rotation_encodings = tf.concat(rotation_encodings_list, 1)
       score_encodings = tf.concat(score_encodings_list, 1)
     return box_encodings, rotation_encodings, score_encodings
+
+  def score_filter(self, boxes, scores, score_thresh=0.5, max_detections=4096):
+    from object_detection.utils import shape_utils
+
+    if scores.shape.ndims != 2:
+      raise ValueError('scores field must be of rank 2')
+    if boxes.shape.ndims != 3:
+      raise ValueError('boxes must be of rank 3.')
+    if boxes.shape[2].value != 5:
+      raise ValueError('boxes must be of shape [batch, anchors, 5].')
+
+    with tf.name_scope('ScoreFilter'):
+      per_image_boxes_list = tf.unstack(boxes)
+      per_image_scores_list = tf.unstack(scores)
+      detection_boxes_list = []
+      detection_scores_list = []
+      detection_classes_list = []
+      num_detections_list = []
+      for (per_image_boxes, per_image_scores
+          ) in zip(per_image_boxes_list, per_image_scores_list):
+        greater_indexes = tf.cast(tf.reshape(
+            tf.where(tf.greater(per_image_scores, score_thresh)),
+            [-1]), tf.int32)
+        filterd_boxes = tf.gather(per_image_boxes, greater_indexes)
+        filterd_scores = tf.gather(per_image_scores, greater_indexes)
+
+        pad_boxes = shape_utils.pad_or_clip_tensor(filterd_boxes, max_detections)
+        pad_scores = shape_utils.pad_or_clip_tensor(filterd_scores, max_detections)
+        num_detections_list.append(tf.to_float(tf.shape(greater_indexes)[0]))
+        detection_boxes_list.append(pad_boxes)
+        detection_scores_list.append(pad_scores)
+        detection_classes_list.append(tf.ones_like(pad_scores))
+
+      det_dict = {
+          'detection_boxes': tf.stack(detection_boxes_list),
+          'detection_scores': tf.stack(detection_scores_list),
+          'detection_classes': tf.stack(detection_classes_list),
+          'num_detections': tf.stack(num_detections_list)
+      }
+      return det_dict
+
 
   def postprocess(self, prediction_dict):
     """Converts prediction tensors to final detections.
@@ -342,19 +388,27 @@ class EASTMetaArch(model.DetectionModel):
       raise ValueError('prediction_dict does not contain expected entries.')
     with tf.name_scope('Postprocessor'):
       box_encodings = prediction_dict['box_encodings']
-      score_predictions = prediction_dict['scores']
-      batched_rotations = prediction_dict['rotations']
-      batched_rotations = tf.squeeze(batched_rotations, axis=2)
+      score_predictions = prediction_dict['scores'] # [batch_size, num_anchors, 1]
+      batched_rotations = tf.squeeze(prediction_dict['rotations'],
+                                     axis=2) # [batch_size, num_anchors]
       detection_boxes = tf.stack([
           self._box_coder.decode(boxes, rotations, self.anchors).get()
           for boxes,rotations in zip(tf.unstack(box_encodings),
                                      tf.unstack(batched_rotations))
-          ])
-      detection_boxes = tf.expand_dims(detection_boxes, axis=2)
+          ]) # [batch_size, num_anchors, 4]
 
       detection_scores = self._score_conversion_fn(score_predictions)
-      clip_window = None #tf.constant([0, 0, 1, 1], tf.float32)
-      detections = self._non_max_suppression_fn(detection_boxes,
+
+      self._non_max_suppression_fn = None
+      if self._non_max_suppression_fn is None:
+        detection_boxes = tf.concat([detection_boxes,
+                                     prediction_dict['rotations']], -1) # [batch_size, num_anchors, 5]
+        detection_scores = tf.squeeze(score_predictions, 2) # [batch_size, num_anchors]
+        detections = self.score_filter(detection_boxes, detection_scores)
+      else:
+        detection_boxes = tf.expand_dims(detection_boxes, axis=2)
+        clip_window = None #tf.constant([0, 0, 1, 1], tf.float32)
+        detections = self._non_max_suppression_fn(detection_boxes,
                                                 detection_scores,
                                                 clip_window=clip_window)
       # TO DO: append rotations to box coordinates
