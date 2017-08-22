@@ -278,8 +278,8 @@ def train(create_tensor_dict_fn, create_model_fn, train_config, master, task,
 
     # Soft placement allows placing on CPU ops without GPU implementation.
     session_config = tf.ConfigProto(allow_soft_placement=True,
-                                    inter_op_parallelism_threads=4,
-                                    intra_op_parallelism_threads=4,
+                                    inter_op_parallelism_threads=2,
+                                    intra_op_parallelism_threads=2,
                                     log_device_placement=False)
 
     # Save checkpoints regularly.
