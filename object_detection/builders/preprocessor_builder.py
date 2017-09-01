@@ -208,6 +208,15 @@ def build(preprocessor_step_config):
                 'method': method
             })
 
+  if step_type == 'resize_image_32':
+    config = preprocessor_step_config.resize_image_32
+    return (preprocessor.resize_32,
+            {
+                'max_dimension': config.max_dimension,
+                'min_scale': config.min_scale,
+                'max_scale': config.max_scale
+            })
+
   if step_type == 'ssd_random_crop':
     config = preprocessor_step_config.ssd_random_crop
     if config.operations:

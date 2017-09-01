@@ -368,7 +368,8 @@ def _build_east_model(east_config, is_training):
                                               is_training, num_classes)
   anchor_generator = anchor_generator_builder.build(
       east_config.anchor_generator)
-  image_resizer_fn = image_resizer_builder.build(east_config.image_resizer)
+  #image_resizer_fn = image_resizer_builder.build(east_config.image_resizer)
+  image_resizer_fn = None
   non_max_suppression_fn, score_conversion_fn = post_processing_builder.build(
       east_config.post_processing)
   (classification_loss, localization_loss, classification_weight,

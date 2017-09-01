@@ -647,6 +647,7 @@ class ScoreRotBoxPredictor(BoxPredictor):
         box_encodings = slim.conv2d(
             net, num_predictions_per_location * self._box_code_size,
             [self._kernel_size, self._kernel_size],
+            activation_fn=tf.nn.sigmoid,
             scope='BoxEncodingPredictor')
         angle_encodings = slim.conv2d(
             net, num_predictions_per_location * 1,

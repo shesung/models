@@ -151,7 +151,7 @@ class TfExampleDecoder(data_decoder.DataDecoder):
     width = keys_to_tensors['image/width']
     to_shape = tf.cast(tf.stack([-1, height, width]), tf.int32)
 
-    return tf.cast(tf.reshape(masks, to_shape), tf.bool)
+    return tf.cast(tf.reshape(masks, to_shape), tf.uint8)
 
   def _pn_decode_masks(self, masks, mask_length):
     import numpy as np

@@ -32,13 +32,15 @@ flags = tf.app.flags
 
 flags.DEFINE_string('set', 'MSRA-TD500_train', 'dataset to pack, sperated by comma')
 flags.DEFINE_string('output_path', './text_loc.record', 'Path to output TFRecord')
-flags.DEFINE_integer('min_size', 640, 'Size of resized shorter edge')
+flags.DEFINE_integer('max_size', 1280, 'max size of resized image')
+flags.DEFINE_boolean('ignore_difficult', True, 'Whether to ignore '
+                     'difficult instances')
 
 FLAGS = flags.FLAGS
 
 
-SETS = ['MSRA-TD500_train', 'MSRA-TD500_test', 
-        'ICDAR2015_train', 
+SETS = ['MSRA-TD500_train', 'MSRA-TD500_test',
+        'ICDAR2015_train',
         'ICDAR2013_train', 'ICDAR2013_test']
 
 def read_multiple_dataset(data_str):
@@ -66,7 +68,7 @@ def read_anno(dataset):
                                '/world/data-c7/censhusheng/data/icdar2013-Focused_Scene_Text/test_gt')
     else:
         return dict()
-    
+
 def read_icdar_2015(image_dir, gt_dir):
     anno_dict = dict()
     for fn in os.listdir(image_dir):
@@ -76,12 +78,15 @@ def read_icdar_2015(image_dir, gt_dir):
             for line in f_gt.readlines():
                 line = line.decode("utf-8-sig").encode("utf-8")
                 items = line.strip().split(',')
+                transcript = items[8]
+                if FLAGS.ignore_difficult and transcript == '###':
+                    continue
                 poly = [int(x) for x in items[:8]]
                 rbox = polygon_2_rbox(poly)
                 obj_list.append((rbox, poly))
         anno_dict[os.path.join(image_dir, fn)] = obj_list
     return anno_dict
-    
+
 def read_icdar_2013(image_dir, gt_dir):
     anno_dict = dict()
     for fn in os.listdir(image_dir):
@@ -219,7 +224,7 @@ def dict_to_tf_example(data, label_map_dict):
 def rbox_2_polygon(xc, yc, w, h, rad):
     w2 = w/2
     h2 = h/2
-    m_rot = np.array([[np.cos(rad), -np.sin(rad)], 
+    m_rot = np.array([[np.cos(rad), -np.sin(rad)],
                       [np.sin(rad), np.cos(rad)]], dtype=np.float32)
     pts_ = np.array([[-w2,-h2],
                      [w2,-h2],
@@ -251,7 +256,7 @@ def polygon_2_rbox(poly):
 
 def shrink_quadrangle(poly, t=0.3):
     x1, y1, x2, y2, x3, y3, x4, y4 = poly
-    
+
     d1 = max(2, math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)))
     d2 = max(2, math.sqrt((x3 - x2) * (x3 - x2) + (y3 - y2) * (y3 - y2)))
     d3 = max(2, math.sqrt((x4 - x3) * (x4 - x3) + (y4 - y3) * (y4 - y3)))
@@ -295,20 +300,29 @@ def pn_encode(x):
     c = np.multiply(d, x[pd[1:]])
     return c.astype(np.int32)
 
-def resize(image, min_size):
+def resize(image, max_size):
+
     width, height = image.size
-    if height < width:
-        new_height = int(min_size)
-        new_width = int(width * min_size / height)
-        if new_width % 32 != 0:
-            new_width -= new_width%32
-    else:
-        new_width = int(min_size)
-        new_height = int(height * min_size / width)
-        if new_height % 32 != 0:
-            new_height -= new_height%32
+
+    new_width = width
+    new_height = height
+    # meet the limit of max_size
+    if width > height and width > max_size:
+        new_width = max_size
+        new_height = int(height * new_width/ width)
+    if height > width and height > max_size:
+        new_height = max_size
+        new_width = int(width * new_height/height)
+
+    # round to multiple of 32
+    if new_width %32 != 0:
+        new_width = int(new_height/32) *32
+
+    if new_height %32 != 0:
+        new_height = int(new_height/32) *32
+
     print('resize:', (width, height), '->', (new_width, new_height)) ###
-    return image.resize((new_width, new_height))
+    return image.resize((new_width, new_height), PIL.Image.BILINEAR)
 
 
 
@@ -322,17 +336,17 @@ def main(_):
     cnt = 0
     for image_fn in anno_dict:
         print(image_fn) ###
-        
+
         t0 = time.time()
         im = PIL.Image.open(image_fn)
-        
+
         # resize
         width, height = im.size
-        im = resize(im, FLAGS.min_size)
+        im = resize(im, FLAGS.max_size)
         new_width, new_height = im.size
         ratio_x = float(new_width) / width
         ratio_y = float(new_height) / height
-        
+
         obj_list = []
         for rbox, poly in anno_dict[image_fn]:
             p = shrink_quadrangle(poly, 0.3)
@@ -348,10 +362,10 @@ def main(_):
             rr, cc = polygon(r, c)
             rr = np.clip(rr, 0, new_height-1)
             cc = np.clip(cc, 0, new_width-1)
-            
+
             mask = np.zeros([new_height, new_width], dtype=np.int32)
             mask[rr,cc] = 1
-            
+
             obj = {
                 'name':'text',
                 'bndbox':{
@@ -367,7 +381,7 @@ def main(_):
                 'difficult': 0,
             }
             obj_list.append(obj)
-            
+
         data = {
             'filename':image_fn,
             'object': obj_list,
@@ -379,7 +393,7 @@ def main(_):
             writer.write(tf_example.SerializeToString())
             cnt += 1
 
-        print('boxes:%d'%(len(data['object'])), 
+        print('boxes:%d'%(len(data['object'])),
               'time:%f'%(time.time() - t0),
               '\n----------------------------')  ###
 

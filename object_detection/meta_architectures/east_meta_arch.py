@@ -281,8 +281,8 @@ class EASTMetaArch(model.DetectionModel):
         tf.summary.histogram("Pred/left", box_encodings[:,:,:,1])
         tf.summary.histogram("Pred/down", box_encodings[:,:,:,2])
         tf.summary.histogram("Pred/right", box_encodings[:,:,:,3])
-        tf.summary.histogram("Pred/left_right", box_encodings[:,:,:,1] + box_encodings[:,:,:,3])
-        tf.summary.histogram("Pred/top_down", box_encodings[:,:,:,0] + box_encodings[:,:,:,2])
+        tf.summary.histogram("Pred/left-right", box_encodings[:,:,:,1] - box_encodings[:,:,:,3])
+        tf.summary.histogram("Pred/top-down", box_encodings[:,:,:,0] - box_encodings[:,:,:,2])
         tf.summary.histogram("Pred/rotations", rotation_encodings)
         tf.summary.histogram("Pred/score", score_encodings)
 
@@ -310,7 +310,7 @@ class EASTMetaArch(model.DetectionModel):
       score_encodings = tf.concat(score_encodings_list, 1)
     return box_encodings, rotation_encodings, score_encodings
 
-  def score_filter(self, boxes, scores, score_thresh=0.5, max_detections=4096):
+  def score_filter(self, boxes, scores, score_thresh=0.5, max_detections=8192):
     from object_detection.utils import shape_utils
 
     if scores.shape.ndims != 2:
@@ -403,7 +403,7 @@ class EASTMetaArch(model.DetectionModel):
       if self._non_max_suppression_fn is None:
         detection_boxes = tf.concat([detection_boxes,
                                      prediction_dict['rotations']], -1) # [batch_size, num_anchors, 5]
-        detection_scores = tf.squeeze(score_predictions, 2) # [batch_size, num_anchors]
+        detection_scores = tf.squeeze(detection_scores, 2) # [batch_size, num_anchors]
         detections = self.score_filter(detection_boxes, detection_scores)
       else:
         detection_boxes = tf.expand_dims(detection_boxes, axis=2)
@@ -449,7 +449,10 @@ class EASTMetaArch(model.DetectionModel):
                               match_list)
       num_matches = tf.stack(
           [match.num_matched_columns() for match in match_list])
-      predicted_rbox = tf.concat([prediction_dict['box_encodings'],
+      top_left = prediction_dict['box_encodings'][:,:,0:2] * -1.0
+      down_right = prediction_dict['box_encodings'][:,:,2:4]
+      predicted_rbox = tf.concat([top_left,
+                                  down_right,
                                   prediction_dict['rotations']], -1)
       rbox_losses = self._localization_loss(
           predicted_rbox,
@@ -469,11 +472,15 @@ class EASTMetaArch(model.DetectionModel):
       if self._normalize_loss_by_num_matches:
         normalizer = tf.maximum(tf.to_float(tf.reduce_sum(num_matches)), 1.0)
 
+      rbox_loss = (self._localization_loss_weight / normalizer) * rbox_loss
+      score_loss = (self._classification_loss_weight / normalizer) * score_loss
+      #score_loss = self._classification_loss_weight * score_loss
+
+      rbox_loss = tf.identity(rbox_loss, name="rbox_loss")
+      score_loss = tf.identity(score_loss, name="score_loss")
       loss_dict = {
-          'localization_loss': (self._localization_loss_weight / normalizer) *
-                               rbox_loss,
-          'classification_loss': (self._classification_loss_weight /
-                                  normalizer) * score_loss
+          'localization_loss': rbox_loss,
+          'classification_loss': score_loss
       }
     return loss_dict
 
@@ -542,6 +549,7 @@ class EASTMetaArch(model.DetectionModel):
     xindices = tf.cast(tf.floor(xcenter), tf.int32)
     coordinates = tf.stack([yindices, xindices], -1)
     groundtruth_masks = tf.cast(groundtruth_masks, tf.int32)
+    groundtruth_masks = tf.Print(groundtruth_masks, [tf.shape(groundtruth_masks)], message='groundtruth_masks:') ###
     gt_masks_max = tf.reduce_max(groundtruth_masks, 0)
     gt_masks_argmax = tf.cast(tf.argmax(groundtruth_masks, 0), tf.int32)
     matched_obj_indices = tf.where(tf.greater(gt_masks_max, 0),
@@ -637,16 +645,15 @@ class EASTMetaArch(model.DetectionModel):
         [match.num_matched_columns() for match in match_list])
     neg_anchors_per_image = tf.stack(
         [match.num_unmatched_columns() for match in match_list])
-    ignored_anchors_per_image = tf.stack(
-        [match.num_ignored_columns() for match in match_list])
     tf.summary.scalar('Input/AvgNumGroundtruthBoxesPerImage',
                       tf.reduce_mean(tf.to_float(num_boxes_per_image)))
     tf.summary.scalar('Input/AvgNumPositiveAnchorsPerImage',
                       tf.reduce_mean(tf.to_float(pos_anchors_per_image)))
     tf.summary.scalar('Input/AvgNumNegativeAnchorsPerImage',
                       tf.reduce_mean(tf.to_float(neg_anchors_per_image)))
-    tf.summary.scalar('Input/AvgNumIgnoredAnchorsPerImage',
-                      tf.reduce_mean(tf.to_float(ignored_anchors_per_image)))
+    tf.summary.scalar('Input/AvgNumAnchorsPerImage',
+                      tf.reduce_mean(tf.to_float(pos_anchors_per_image
+                                                 + neg_anchors_per_image)))
 
     gt_masks = groundtruth_masks_list[0]
     gt_masks = tf.cast(gt_masks, tf.float32)

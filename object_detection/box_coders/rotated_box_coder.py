@@ -18,6 +18,7 @@
 """
 
 import tensorflow as tf
+import math
 
 from object_detection.core import box_list
 
@@ -65,6 +66,14 @@ class RotatedBoxCoder(object):
     left  = -0.5 * w - center_x
     down  = 0.5 * h - center_y
     right = 0.5 * w - center_x
+
+    x_scale = 1.0 / 1024.0
+    y_scale = 1.0 / 1024.0
+    top   = top   * y_scale
+    left  = left  * x_scale
+    down  = down  * y_scale
+    right = right * x_scale
+
     return tf.transpose(tf.stack([top, left, down, right, rotations]))
 
   def _decode(self, rel_codes, rotations, anchors):
@@ -79,6 +88,12 @@ class RotatedBoxCoder(object):
     """
     ycenter_a, xcenter_a, ha, wa = anchors.get_center_coordinates_and_sizes()
     top, left, down, right = tf.unstack(tf.transpose(rel_codes))
+    x_scale = 1024.0
+    y_scale = 1024.0
+    top   = top   * y_scale * -1.0
+    left  = left  * x_scale * -1.0
+    down  = down  * y_scale
+    right = right * x_scale
 
     rot_center_x = (right + left) * 0.5
     rot_center_y = (top + down) * 0.5

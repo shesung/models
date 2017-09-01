@@ -36,27 +36,36 @@ categories = label_map_util.convert_label_map_to_categories(label_map, max_num_c
 category_indexs = label_map_util.create_category_index(categories)
 
 
-def resize(image, min_size):
+def resize(image, max_size, scale=1.0):
+
     width, height = image.size
-    if height < width:
-        new_height = int(min_size)
-        new_width = int(width * min_size / height)
-        if new_width % 32 != 0:
-            new_width -= new_width%32
-    else:
-        new_width = int(min_size)
-        new_height = int(height * min_size / width)
-        if new_height % 32 != 0:
-            new_height -= new_height%32
+
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+    # meet the limit of max_size
+    if width > height and width > max_size:
+        new_width = max_size
+        new_height = int(height * new_width/ width)
+    if height > width and height > max_size:
+        new_height = max_size
+        new_width = int(width * new_height/height)
+
+    # round to multiple of 32
+    if new_width %32 != 0:
+        new_width = int(new_height/32) *32
+
+    if new_height %32 != 0:
+        new_height = int(new_height/32) *32
+
     print 'resize:', (width, height), '->', (new_width, new_height) ###
     return image.resize((new_width, new_height), Image.BILINEAR)
 
 
 
-def load_image_into_numpy_array(input_image, min_size=640):
-    image = resize(input_image, min_size)
+def load_image_into_numpy_array(input_image, max_size=1280, scale=1.0):
+    image = resize(input_image, max_size, scale)
     (im_width, im_height) = image.size
-    return np.array(image.getdata()).reshape(
+    return np.array(image).reshape(
         (im_height, im_width, 3)).astype(np.uint8)
 
 
@@ -102,51 +111,57 @@ with detection_graph.as_default():
             t_ = time.time()
             image = Image.open(os.path.join(data_dir, fn))
             width, height = image.size
-            image_np = load_image_into_numpy_array(image, 736)
-            new_width, new_height = image.size
-            ratio_x = float(width)/image_np.shape[1]
-            ratio_y = float(height)/image_np.shape[0]
-            print 'resize time:', time.time() - t_ ###
 
-            image_np_expanded = np.expand_dims(image_np, axis=0)
-            image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
-
-            boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
-            scores = detection_graph.get_tensor_by_name('detection_scores:0')
-            classes = detection_graph.get_tensor_by_name('detection_classes:0')
-            num_detections = detection_graph.get_tensor_by_name('num_detections:0')
-
-            # Actual detection.
-            t0 = time.time()
-            (boxes, scores, classes, num_detections) = sess.run(
-                [boxes, scores, classes, num_detections],
-                feed_dict={image_tensor: image_np_expanded})
-            print 'net time:', time.time() - t0, 'num_detections:', num_detections ###
-
-            # convert rbox to polygon
-            t0 = time.time()
-            boxes = np.squeeze(boxes)
-            yc = (boxes[:,0] + boxes[:,2]) / 2
-            xc = (boxes[:,1] + boxes[:,3]) / 2
-            h = boxes[:,2] - boxes[:,0]
-            w = boxes[:,3] - boxes[:,1]
-            scores = np.squeeze(scores)
             polys = []
-            score_thresh = 0.9
-            for i in range(num_detections[0]):
-                if scores[i] < score_thresh:
-                    continue
-                p = rbox_2_polygon(xc[i], yc[i], w[i], h[i], boxes[i,4])
-                if p is not None:
-                    polys.append(p + [scores[i]])
+            scales = [1.2]
+            for s in scales:
+                image_np = load_image_into_numpy_array(image, 2000, s)
+                new_width, new_height = image.size
+                ratio_x = float(width)/image_np.shape[1]
+                ratio_y = float(height)/image_np.shape[0]
+                print 'preprocss time:', time.time() - t_ ###
+
+                image_np_expanded = np.expand_dims(image_np, axis=0)
+                image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
+
+                boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
+                scores = detection_graph.get_tensor_by_name('detection_scores:0')
+                classes = detection_graph.get_tensor_by_name('detection_classes:0')
+                num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+
+                # Actual detection.
+                t0 = time.time()
+                (boxes, scores, classes, num_detections) = sess.run(
+                    [boxes, scores, classes, num_detections],
+                    feed_dict={image_tensor: image_np_expanded})
+                print 'net time:', time.time() - t0, 'num_detections:', num_detections ###
+
+                # convert rbox to polygon
+                t0 = time.time()
+                boxes = np.squeeze(boxes)
+                yc = (boxes[:,0] + boxes[:,2]) / 2
+                xc = (boxes[:,1] + boxes[:,3]) / 2
+                h = boxes[:,2] - boxes[:,0]
+                w = boxes[:,3] - boxes[:,1]
+                scores = np.squeeze(scores)
+                score_thresh = 0.5
+                for i in range(num_detections[0]):
+                    if scores[i] < score_thresh:
+                        continue
+                    p = rbox_2_polygon(xc[i], yc[i], w[i], h[i], boxes[i,4])
+                    if p is not None:
+                        for i in range(8):
+                            ratio = ratio_x if i%2 ==0 else ratio_y
+                            p[i] *= ratio
+                        polys.append(p + [scores[i]])
+                print 'convert time:', time.time() - t0 ###
             polys = np.array(polys, dtype=np.float32)
-            print 'convert time:', time.time() - t0 ###
 
             # lanms
             nms_thresh = 0.2
             t0 = time.time()
             polys = lanms.merge_quadrangle_n9(polys, nms_thresh)
-            nms_keep_thresh = 5.0
+            nms_keep_thresh = 1.0
             if polys.shape[0] > 0:
                 remain_index = np.where(polys[:,8] > nms_keep_thresh)[0]
                 polys = polys[remain_index]
@@ -157,13 +172,14 @@ with detection_graph.as_default():
             with open(os.path.join(output_dir, res_fn), 'w') as f_res:
                 for p in polys:
                     f_res.write("{:d},{:d},{:d},{:d},{:d},{:d},{:d},{:d}\r\n".format(
-                        int(p[0] * ratio_x),
-                        int(p[1] * ratio_y),
-                        int(p[2] * ratio_x),
-                        int(p[3] * ratio_y),
-                        int(p[4] * ratio_x),
-                        int(p[5] * ratio_y),
-                        int(p[6] * ratio_x),
-                        int(p[7] * ratio_y),
+                        int(p[0]),
+                        int(p[1]),
+                        int(p[2]),
+                        int(p[3]),
+                        int(p[4]),
+                        int(p[5]),
+                        int(p[6]),
+                        int(p[7]),
                     ))
+            print os.path.join(output_dir, res_fn)
             print 'total time:', time.time() - t_

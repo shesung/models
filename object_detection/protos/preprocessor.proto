@@ -29,6 +29,7 @@ message PreprocessingStep {
     SSDRandomCrop ssd_random_crop = 21;
     SSDRandomCropPad ssd_random_crop_pad = 22;
     SSDRandomCropFixedAspectRatio ssd_random_crop_fixed_aspect_ratio = 23;
+    ResizeImage32 resize_image_32 = 24;
   }
 }
 
@@ -214,6 +215,13 @@ message ResizeImage {
     NEAREST_NEIGHBOR=4;
   }
   optional Method method = 3 [default=BILINEAR];
+}
+
+// Resizes images to [32*h, 32*w]
+message ResizeImage32 {
+  optional int32 max_dimension = 1;
+  optional float min_scale = 2;
+  optional float max_scale = 3;
 }
 
 // Normalizes an image by subtracting a mean from each channel.

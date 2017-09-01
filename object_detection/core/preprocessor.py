@@ -1357,6 +1357,97 @@ def resize_to_range(image,
     return result
 
 
+def resize_32(image,
+              masks=None,
+              max_dimension=None,
+              min_scale=1.0,
+              max_scale=1.0,
+              seed=None,
+              align_corners=False):
+  """Resizes an image so its dimensions are multiples of 32.
+
+  Args:
+    image: A 3D tensor of shape [height, width, channels]
+    masks: (optional) rank 3 float32 tensor with shape
+           [num_instances, height, width] containing instance masks.
+    max_dimension: (optional) (scalar) maximum allowed size
+                   of the larger image dimension.
+    align_corners: bool. If true, exactly align all 4 corners of the input
+                   and output. Defaults to False.
+
+  Returns:
+    A 3D tensor of shape [new_height, new_width, channels],
+    where the image has been resized (with bilinear interpolation) so that
+    new_height % 32  == 0 and new_width % 32 == 0 and
+    max(new_height, new_width) <= max_dimension.
+
+    If masks is not None, also outputs masks:
+    A 3D tensor of shape [num_instances, new_height, new_width]
+
+  Raises:
+    ValueError: if the image is not a 3D tensor.
+  """
+  if len(image.get_shape()) != 3:
+    raise ValueError('Image should be 3D tensor')
+
+  if max_dimension and max_dimension % 32 != 0:
+    raise ValueError('max_dimension must be multiples of 32')
+
+  with tf.name_scope('Resize32', values=[image, max_dimension]):
+    image_shape = tf.shape(image)
+    orig_height = tf.to_float(image_shape[0])
+    orig_width = tf.to_float(image_shape[1])
+
+    random_scales = tf.random_uniform([2], min_scale, max_scale, seed=seed)
+
+    height_32 = tf.round(orig_height * random_scales[0] / 32.0) * 32
+    width_32 = tf.round(orig_width * random_scales[0] / 32.0) * 32
+    new_size = tf.stack([height_32, width_32])
+
+    if max_dimension:
+      max_dim_32 = tf.to_float(tf.maximum(height_32, width_32))
+      max_dimension = tf.constant(max_dimension, dtype=tf.float32)
+      small_scale_factor = max_dimension / max_dim_32
+      # Scaling orig_(height|width) by small_scale_factor will make the larger
+      # dimension equal to max_dimension, save for floating point rounding
+      # errors. For reasonably-sized images, taking the nearest integer will
+      # reliably eliminate this error.
+      small_height = tf.round(height_32 * small_scale_factor / 32.0) * 32
+      small_width = tf.round(width_32 * small_scale_factor / 32.0) * 32
+      small_size = tf.stack([small_height, small_width])
+
+      new_size = tf.cond(
+          tf.to_float(tf.reduce_max(new_size)) > max_dimension,
+          lambda: small_size, lambda: new_size)
+
+    new_size = tf.to_int32(new_size)
+    new_image = tf.image.resize_images(image, new_size,
+                                       align_corners=align_corners)
+
+    result = new_image
+    if masks is not None:
+      num_instances = tf.shape(masks)[0]
+
+      def resize_masks_branch():
+        new_masks = tf.expand_dims(masks, 3)
+        new_masks = tf.image.resize_nearest_neighbor(
+            new_masks, new_size, align_corners=align_corners)
+        new_masks = tf.squeeze(new_masks, axis=3)
+        new_masks = tf.Print(new_masks, [image_shape, tf.shape(new_image), tf.shape(new_masks)], message='resize_32:') ###
+        return new_masks
+
+      def reshape_masks_branch():
+        new_masks = tf.reshape(masks, [0, new_size[0], new_size[1]])
+        return new_masks
+
+      masks = tf.cond(num_instances > 0,
+                      resize_masks_branch,
+                      reshape_masks_branch)
+      result = [new_image, masks]
+
+    return result
+
+
 def scale_boxes_to_pixel_coordinates(image, boxes, keypoints=None):
   """Scales boxes from normalized to pixel coordinates.
 
@@ -1811,6 +1902,8 @@ def get_default_func_arg_map(include_instance_masks=False,
       random_resize_method: (fields.InputDataFields.image,),
       resize_to_range: (fields.InputDataFields.image,
                         groundtruth_instance_masks,),
+      resize_32: (fields.InputDataFields.image,
+                        groundtruth_instance_masks,),
       scale_boxes_to_pixel_coordinates: (
           fields.InputDataFields.image,
           fields.InputDataFields.groundtruth_boxes,
@@ -1877,7 +1970,7 @@ def preprocess(tensor_dict, preprocess_options, func_arg_map=None):
                 (c) If image in tensor_dict is not rank 4
   """
   if func_arg_map is None:
-    func_arg_map = get_default_func_arg_map()
+    func_arg_map = get_default_func_arg_map(include_instance_masks=True)
 
   # changes the images to image (rank 4 to rank 3) since the functions
   # receive rank 3 tensor for image
