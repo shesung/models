@@ -188,7 +188,6 @@ def dict_to_tf_example(data, label_map_dict):
 
   mask = np.stack(masks)
   encoded_mask = pn_encode(mask.flatten()).tolist()
-  mask_length = len(encoded_mask)
   print('mask encode:', mask.shape, '->', len(encoded_mask)) ###
   example = tf.train.Example(features=tf.train.Features(feature={
       'image/height': dataset_util.int64_feature(height),
@@ -211,7 +210,6 @@ def dict_to_tf_example(data, label_map_dict):
       'image/object/truncated': dataset_util.int64_list_feature(truncated),
       'image/object/view': dataset_util.bytes_list_feature(poses),
       'image/segmentation/object': dataset_util.int64_list_feature(encoded_mask),
-      'image/segmentation/length': dataset_util.int64_feature(mask_length),
       'image/segmentation/object/class': dataset_util.int64_list_feature(classes),
   }))
   return example
